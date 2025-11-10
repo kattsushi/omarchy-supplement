@@ -33,6 +33,7 @@ if [ $? -eq 0 ]; then
   stow tmux
   stow nvim
   stow waybar
+  stow mako
   stow starship
 else
   echo "Failed to clone the repository."
