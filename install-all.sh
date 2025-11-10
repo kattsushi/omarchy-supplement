@@ -1,11 +1,13 @@
 #!/bin/bash
 
 # Install all packages in order
+
+./install-fnm.sh
 ./install-zsh.sh
-./install-asdf.sh
-./install-nodejs.sh
-./install-ruby.sh
-./install-postgresql.sh
+./install-mkalias.sh
+./install-zen-browser-bin.sh
+./install-tree.sh
+./install-bun.sh
 ./install-ghostty.sh
 ./install-tmux.sh
 ./install-stow.sh
