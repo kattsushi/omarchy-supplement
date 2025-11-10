@@ -5,7 +5,7 @@ REPO_URL="https://github.com/kattsushi/dotfiles-v2"
 REPO_NAME="dotfiles"
 
 is_stow_installed() {
-  pacman -Qi "stow" &> /dev/null
+  pacman -Qi "stow" &>/dev/null
 }
 
 if ! is_stow_installed; then
@@ -32,9 +32,9 @@ if [ $? -eq 0 ]; then
   stow ghostty
   stow tmux
   stow nvim
+  stow waybar
   stow starship
 else
   echo "Failed to clone the repository."
   exit 1
 fi
-

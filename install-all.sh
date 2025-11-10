@@ -11,6 +11,9 @@
 ./install-slack.sh
 ./install-dbeaver.sh
 ./install-connar-app.sh
+./install-cursor.sh
+./install-google-calendar.sh
+./install-linear.sh
 ./install-bun.sh
 ./install-discord.sh
 ./install-ghostty.sh
