@@ -1,3 +1,3 @@
 #!/bin/bash
-# Install Fnnm Node version manager
-yay -S --noconfirm --needed dbdeaver-ce-bin 
+# Install DB Postgres DbDeaver Community edittion
+yay -S --noconfirm --needed dbeaver-ce-jre-bin
