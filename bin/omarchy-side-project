@@ -1,0 +1,222 @@
+#!/bin/bash
+
+# Open a side-project environment on Hyprland workspace 4.
+#
+# This command opens Ghostty in ~/devx-ops, asks which child directory to use,
+# enters that project, opens VS Code with `code .`, and leaves the terminal open
+# in the selected project.
+#
+# Idempotency/change behavior:
+# - If workspace 4 already appears to have a selected side project open, the
+#   command switches to workspace 4 and asks whether you want to change project
+#   inside Ghostty. This matters when launching from OpenDeck, because OpenDeck
+#   Run Command has no visible stdin/stdout for prompts.
+# - If you choose to change project, it closes the current workspace 4 project
+#   windows before opening the next selection. It only targets Ghostty/VS Code
+#   windows on the side-project workspace.
+# - Answer "no" to leave the current workspace untouched.
+# - Answer "yes" or use --force to open the project picker again.
+#
+# Project picker priority:
+# 1. gum choose, if available
+# 2. fzf, if available
+# 3. Bash select fallback
+#
+# Environment overrides:
+#   SIDE_PROJECTS_DIR=/custom/root omarchy-side-project
+#   OMARCHY_SIDE_WORKSPACE=6 omarchy-side-project
+
+set -euo pipefail
+
+force=false
+close_only=false
+
+for arg in "$@"; do
+  case "$arg" in
+    -h|--help)
+      sed -n '1,31p' "$0"
+      exit 0
+      ;;
+    --force)
+      force=true
+      ;;
+    --close-current)
+      close_only=true
+      ;;
+    *)
+      echo "Unknown option: $arg"
+      echo "Usage: $(basename "$0") [--force]"
+      exit 1
+      ;;
+  esac
+done
+
+workspace="${OMARCHY_SIDE_WORKSPACE:-4}"
+side_projects_dir="${SIDE_PROJECTS_DIR:-$HOME/devx-ops}"
+
+if [ ! -d "$side_projects_dir" ]; then
+  echo "Side-projects directory not found: $side_projects_dir"
+  exit 1
+fi
+
+if ! command -v hyprctl >/dev/null 2>&1; then
+  echo "hyprctl is required. Are you running this inside Hyprland/Omarchy?"
+  exit 1
+fi
+
+if ! command -v ghostty >/dev/null 2>&1; then
+  echo "ghostty is required. Install it before running this command."
+  exit 1
+fi
+
+current_side_project() {
+  command -v jq >/dev/null 2>&1 || return 1
+
+  hyprctl clients -j | jq -r \
+    --argjson workspace "$workspace" \
+    --arg root "$side_projects_dir/" '
+      [
+        .[]
+        | select(.workspace.id == $workspace)
+        | select(
+            ((.class == "code" or .initialClass == "code") and ((.title // "") | test("Visual Studio Code"))) or
+            ((.class == "com.mitchellh.ghostty" or .initialClass == "com.mitchellh.ghostty") and ((.title // "") | startswith($root)))
+          )
+        | if ((.class == "com.mitchellh.ghostty" or .initialClass == "com.mitchellh.ghostty") and ((.title // "") | startswith($root))) then
+            ((.title // "") | sub("^" + ($root | gsub("([\\\\.^$|?*+(){}\\[\\]])"; "\\\\\\1")); "") | split("/")[0])
+          else
+            ((.title // "") | split(" - ")[-2] // "unknown")
+          end
+      ]
+      | map(select(. != null and . != "" and . != "unknown"))
+      | unique
+      | first // empty
+    '
+}
+
+close_current_side_project_windows() {
+  command -v jq >/dev/null 2>&1 || return 0
+
+  local root_name
+  root_name="$(basename "$side_projects_dir")"
+
+  mapfile -t addresses < <(
+    hyprctl clients -j | jq -r \
+      --argjson workspace "$workspace" \
+      --arg root "$side_projects_dir/" \
+      --arg root_name "$root_name" '
+        .[]
+        | select(.workspace.id == $workspace)
+        | select(
+            (.class == "code" or .initialClass == "code") or
+            (
+              (.class == "com.mitchellh.ghostty" or .initialClass == "com.mitchellh.ghostty") and
+              (
+                ((.title // "") | contains($root)) or
+                ((.title // "") | contains("~/" + $root_name + "/"))
+              )
+            )
+          )
+        | .address
+      '
+  )
+
+  for address in "${addresses[@]}"; do
+    [ -n "$address" ] || continue
+    hyprctl dispatch closewindow "address:$address" >/dev/null || true
+  done
+}
+
+if [ "$close_only" = true ]; then
+  close_current_side_project_windows
+  exit 0
+fi
+
+hyprctl dispatch workspace "$workspace"
+
+current_project="$(current_side_project || true)"
+
+if [ -n "$current_project" ] && [ "$force" = true ]; then
+  close_current_side_project_windows
+fi
+
+SCRIPT_PATH="$0" SIDE_PROJECTS_DIR="$side_projects_dir" SIDE_WORKSPACE="$workspace" CURRENT_PROJECT="$current_project" FORCE_CHANGE="$force" ghostty --working-directory="$side_projects_dir" -e bash -lc '
+set -euo pipefail
+
+cd "$SIDE_PROJECTS_DIR"
+
+if [ -n "${CURRENT_PROJECT:-}" ] && [ "${FORCE_CHANGE:-false}" != "true" ]; then
+  echo "Side-project workspace already appears to be using: $CURRENT_PROJECT"
+  echo
+
+  if command -v gum >/dev/null 2>&1; then
+    if ! gum confirm "Do you want to change side project?"; then
+      echo "Leaving workspace unchanged."
+      sleep 1
+      exit 0
+    fi
+  else
+    read -r -p "Do you want to change side project? [y/N] " answer
+    case "$answer" in
+      y|Y|yes|YES) ;;
+      *)
+        echo "Leaving workspace unchanged."
+        sleep 1
+        exit 0
+        ;;
+    esac
+  fi
+
+  echo
+
+  echo "Closing current side-project windows before switching..."
+  SIDE_PROJECTS_DIR="$SIDE_PROJECTS_DIR" OMARCHY_SIDE_WORKSPACE="$SIDE_WORKSPACE" "$SCRIPT_PATH" --close-current
+
+  sleep 0.5
+  echo
+fi
+
+projects=()
+for dir in */; do
+  [ -d "$dir" ] || continue
+  projects+=("${dir%/}")
+done
+
+if [ "${#projects[@]}" -eq 0 ]; then
+  echo "No project directories found in $SIDE_PROJECTS_DIR"
+  exec "${SHELL:-/bin/bash}" -l
+fi
+
+selected=""
+
+if command -v gum >/dev/null 2>&1; then
+  selected=$(printf "%s\n" "${projects[@]}" | gum choose --header "Open side project")
+elif command -v fzf >/dev/null 2>&1; then
+  selected=$(printf "%s\n" "${projects[@]}" | fzf --prompt="Open side project > ")
+else
+  echo "Choose side project:"
+  select project in "${projects[@]}"; do
+    selected="$project"
+    break
+  done
+fi
+
+if [ -z "$selected" ]; then
+  echo "No project selected."
+  exec "${SHELL:-/bin/bash}" -l
+fi
+
+cd "$selected"
+
+echo "Opening VS Code in $PWD..."
+if command -v code >/dev/null 2>&1; then
+  code . >/tmp/omarchy-side-project-code.log 2>&1 &
+else
+  echo "WARNING: code command not found. Skipping VS Code launch."
+fi
+
+echo
+echo "Side-project workspace is ready."
+echo "Project: $PWD"
+exec "${SHELL:-/bin/bash}" -l
+'

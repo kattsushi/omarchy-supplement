@@ -1,0 +1,129 @@
+#!/bin/bash
+
+# Open the Revyse work environment on Hyprland workspace 3.
+#
+# This command intentionally keeps the setup inside a Ghostty terminal so the
+# full bootstrap is visible and debuggable instead of happening silently.
+#
+# What it does:
+# 1. Switches Hyprland to workspace 3.
+# 2. Opens Ghostty in ~/revyse/revyse.
+# 3. Launches Cursor from that terminal with `cursor .`.
+# 4. Opens a second Ghostty terminal running opencode in the same project.
+# 5. Starts the local database stack from tmp/docker-compose.yml:
+#      cd tmp && docker-compose down && docker-compose up -d && cd ..
+# 6. Leaves the setup terminal open in the project root.
+#
+# Idempotency:
+# - If workspace 3 already contains the Revyse Ghostty terminal or Cursor window,
+#   the command only switches to workspace 3 and exits. This avoids duplicate
+#   terminals, duplicate Cursor/opencode launches, and repeated docker-compose resets.
+# - Use --force to bypass this guard.
+#
+# Environment overrides:
+#   REVYSE_DIR=/custom/path omarchy-work-revyse
+#   OMARCHY_WORK_WORKSPACE=5 omarchy-work-revyse
+
+set -euo pipefail
+
+force=false
+
+for arg in "$@"; do
+  case "$arg" in
+    -h|--help)
+      sed -n '1,31p' "$0"
+      exit 0
+      ;;
+    --force)
+      force=true
+      ;;
+    *)
+      echo "Unknown option: $arg"
+      echo "Usage: $(basename "$0") [--force]"
+      exit 1
+      ;;
+  esac
+done
+
+workspace="${OMARCHY_WORK_WORKSPACE:-3}"
+project_dir="${REVYSE_DIR:-$HOME/revyse/revyse}"
+
+if [ ! -d "$project_dir" ]; then
+  echo "Revyse directory not found: $project_dir"
+  exit 1
+fi
+
+if ! command -v hyprctl >/dev/null 2>&1; then
+  echo "hyprctl is required. Are you running this inside Hyprland/Omarchy?"
+  exit 1
+fi
+
+if ! command -v ghostty >/dev/null 2>&1; then
+  echo "ghostty is required. Install it before running this command."
+  exit 1
+fi
+
+workspace_has_revyse_setup() {
+  command -v jq >/dev/null 2>&1 || return 1
+
+  hyprctl clients -j | jq -e \
+    --argjson workspace "$workspace" \
+    --arg project_name "$(basename "$project_dir")" \
+    --arg project_dir "$project_dir" '
+      any(.[];
+        (.workspace.id == $workspace) and
+        (
+          (.class == "cursor" and ((.title // "") | test($project_name; "i"))) or
+          (.initialClass == "cursor" and ((.title // "") | test($project_name; "i"))) or
+          (.class == "com.mitchellh.ghostty" and ((.title // "") | contains($project_dir))) or
+          (.initialClass == "com.mitchellh.ghostty" and ((.title // "") | contains($project_dir)))
+        )
+      )
+    ' >/dev/null 2>&1
+}
+
+hyprctl dispatch workspace "$workspace"
+
+if [ "$force" = false ] && workspace_has_revyse_setup; then
+  echo "Revyse workspace already appears to be running on workspace $workspace."
+  echo "Skipping setup to avoid duplicate Ghostty/Cursor/docker-compose calls."
+  echo "Use --force to run setup anyway."
+  exit 0
+fi
+
+PROJECT_DIR="$project_dir" ghostty --working-directory="$project_dir" -e bash -lc '
+set -euo pipefail
+
+cd "$PROJECT_DIR"
+
+echo "Opening Cursor in $PROJECT_DIR..."
+if command -v cursor >/dev/null 2>&1; then
+  cursor . >/tmp/omarchy-work-revyse-cursor.log 2>&1 &
+else
+  echo "WARNING: cursor command not found. Skipping Cursor launch."
+fi
+
+echo "Opening opencode in a second Ghostty terminal..."
+if command -v opencode >/dev/null 2>&1; then
+  ghostty --working-directory="$PROJECT_DIR" -e bash -lc "exec opencode" >/tmp/omarchy-work-revyse-opencode.log 2>&1 &
+else
+  echo "WARNING: opencode command not found. Skipping opencode launch."
+fi
+
+echo
+echo "Starting Revyse database stack..."
+if [ ! -f tmp/docker-compose.yml ]; then
+  echo "ERROR: tmp/docker-compose.yml not found. Cannot start database stack."
+  exec "${SHELL:-/bin/bash}" -l
+fi
+
+cd tmp
+docker-compose down
+docker-compose up -d
+cd ..
+
+echo
+echo "Revyse workspace is ready."
+echo "Project: $PWD"
+exec "${SHELL:-/bin/bash}" -l
+'
