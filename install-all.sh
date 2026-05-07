@@ -16,7 +16,6 @@
 ./install-linear.sh
 ./install-bun.sh
 ./install-discord.sh
-./install-ghostty.sh
 ./install-tmux.sh
 ./install-stow.sh
 ./install-dotfiles.sh
