@@ -19,7 +19,7 @@ cd ~
 if [ -d "$REPO_NAME" ]; then
   echo "Repository '$REPO_NAME' already exists. Skipping clone"
 else
-  git clone "$REPO_URL" "$REPO"
+  git clone "$REPO_URL" "$REPO_NAME"
 fi
 
 # Check if the clone was successful
@@ -32,8 +32,8 @@ if [ $? -eq 0 ]; then
   stow ghostty
   stow tmux
   stow nvim
-  stow waybar
-  stow mako
+  # stow waybar
+  # stow mako
   stow starship
 else
   echo "Failed to clone the repository."
