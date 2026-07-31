@@ -1,0 +1,2 @@
+schema	brf-v1
+action	base@1	090	fixture-state	managed-state	yes	internal	fixture-state

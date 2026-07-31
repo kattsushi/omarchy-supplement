@@ -1,32 +1,33 @@
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
-# shellcheck source=../bootstrap/lib/core.sh
 source "$ROOT/bootstrap/lib/core.sh"
 source "$ROOT/bootstrap/lib/catalog.sh"
 source "$ROOT/bootstrap/lib/providers.sh"
 source "$ROOT/bootstrap/lib/dotfiles.sh"
 source "$ROOT/bootstrap/lib/resolve.sh"
+source "$ROOT/bootstrap/lib/state.sh"
 source "$ROOT/bootstrap/lib/plan.sh"
-usage() { bootstrap_error 'usage: workstation-bootstrap plan|check --profile NAME [--profile NAME...]'; exit "$BOOTSTRAP_INVALID"; }
+source "$ROOT/bootstrap/lib/lifecycle.sh"
+usage() { bootstrap_error 'usage: workstation-bootstrap plan|check --profile NAME | apply --plan FILE --expect-hash sha256:HEX | verify --receipt FILE'; exit "$BOOTSTRAP_INVALID"; }
 [[ $# -gt 0 ]] || usage
-command=$1; shift
-case "$command" in plan|check) ;; apply|verify) bootstrap_error "UNIMPLEMENTED_WORK_UNIT_B"; exit "$BOOTSTRAP_INVALID";; *) usage;; esac
-profiles=()
-while (($#)); do case "$1" in --profile) (($# >= 2)) || usage; profiles+=("$2"); shift 2;; --format) (($# >= 2)) || usage; [[ $2 == brf || $2 == human ]] || usage; shift 2;; *) usage;; esac; done
-((${#profiles[@]})) || usage
+command=$1; shift; profiles=(); plan= receipt= expected=
+while (($#)); do case "$1" in
+  --profile) (($# >= 2)) || usage; profiles+=("$2"); shift 2;;
+  --plan) (($# >= 2)) || usage; plan=$2; shift 2;;
+  --expect-hash) (($# >= 2)) || usage; expected=$2; shift 2;;
+  --receipt) (($# >= 2)) || usage; receipt=$2; shift 2;;
+  --format) (($# >= 2)) || usage; [[ $2 == brf || $2 == human ]] || usage; shift 2;; *) usage;; esac; done
 bootstrap_fixture_guard
 CATALOG="${BOOTSTRAP_CATALOG_DIR:-$ROOT/bootstrap/catalog/v1}"
 validate_catalogs "$CATALOG"
-os=$(bootstrap_os); arch=$(bootstrap_arch)
-set +e
-payload=$(plan_emit "$CATALOG" "$os" "$arch" "${profiles[@]}")
-rc=$?
-set -e
-if ! plan_hash=$(printf '%s' "$payload" | bootstrap_hash); then
-  bootstrap_error "HASH_TOOL_MISSING"
-  exit "$BOOTSTRAP_REFUSAL"
-fi
-# The hash covers the exact canonical payload; the header is excluded from its own digest.
-printf 'plan_hash\t%s\n%s\n' "$plan_hash" "$payload"
-exit "$rc"
+case "$command" in
+  plan|check)
+    ((${#profiles[@]})) || usage
+    set +e; payload=$(plan_emit "$CATALOG" "$(bootstrap_os)" "$(bootstrap_arch)" "${profiles[@]}"); rc=$?; set -e
+    plan_hash=$(printf '%s' "$payload" | bootstrap_hash) || { bootstrap_error HASH_TOOL_MISSING; exit "$BOOTSTRAP_REFUSAL"; }
+    printf 'plan_hash\t%s\n%s\n' "$plan_hash" "$payload"; exit "$rc";;
+  apply) [[ -n $plan && -n $expected && ${#profiles[@]} -eq 0 ]] || usage; lifecycle_apply "$CATALOG" "$plan" "$expected";;
+  verify) [[ -n $receipt && ${#profiles[@]} -eq 0 ]] || usage; lifecycle_verify "$receipt";;
+  *) usage;;
+esac

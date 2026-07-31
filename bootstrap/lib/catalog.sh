@@ -49,7 +49,7 @@ validate_catalog() {
 			;;
 		actions:action)
 			expected=8
-			valid_id "${fields[1]:-}" && [[ ${fields[2]:-} =~ ^0[0-9][0-9]$ ]] && valid_id "${fields[3]:-}" && [[ ${fields[4]:-} =~ ^(package|dotfiles|download|shell|desktop)$ ]] && [[ ${fields[5]:-} =~ ^(yes|no)$ ]] && [[ ${fields[6]:-} =~ ^(internal|arch.pacman|arch.aur|darwin.homebrew.formula|darwin.homebrew.cask|darwin.nix-darwin|none)$ ]] && valid_id "${fields[7]:-}" || {
+			valid_id "${fields[1]:-}" && [[ ${fields[2]:-} =~ ^0[0-9][0-9]$ ]] && valid_id "${fields[3]:-}" && [[ ${fields[4]:-} =~ ^(managed-state|package|dotfiles|download|shell|desktop)$ ]] && [[ ${fields[5]:-} =~ ^(yes|no)$ ]] && [[ ${fields[6]:-} =~ ^(internal|arch.pacman|arch.aur|darwin.homebrew.formula|darwin.homebrew.cask|darwin.nix-darwin|none)$ ]] && valid_id "${fields[7]:-}" || {
 				catalog_fail "action"
 				return
 			}

@@ -1,7 +1,7 @@
 schema	brf-v1
-legacy	install-all.sh	blocked	LEGACY_UNSAFE	workstation-bootstrap-plan
+legacy	install-all.sh	redirected-read-only	LEGACY_UNSAFE	workstation-bootstrap-plan
 legacy	install-asdf.sh	blocked	LEGACY_UNSAFE	provider-unimplemented
-legacy	install-dotfiles.sh	blocked	LEGACY_UNSAFE	workstation-bootstrap-check
+legacy	install-dotfiles.sh	redirected-read-only	LEGACY_UNSAFE	workstation-bootstrap-check
 legacy	install-mkalias.sh	retired	LEGACY_RETIRED	product-decision-required
 legacy	install-nodejs.sh	blocked	LEGACY_UNSAFE	provider-unimplemented
 legacy	install-postgresql.sh	blocked	LEGACY_UNSAFE	provider-unimplemented

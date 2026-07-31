@@ -1,15 +1,5 @@
-#!/bin/bash
-
-# Install all packages in order
-./install-zsh.sh
-./install-asdf.sh
-./install-nodejs.sh
-./install-ruby.sh
-./install-postgresql.sh
-./install-ghostty.sh
-./install-tmux.sh
-./install-stow.sh
-./install-dotfiles.sh
-./install-hyprland-overrides.sh
-
-./set-shell.sh
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+printf '%s\n' 'LEGACY_REDIRECTED_READ_ONLY: inspect bootstrap plan; installers are not run.' >&2
+exec "$ROOT/bin/workstation-bootstrap" plan --profile base --profile omarchy
