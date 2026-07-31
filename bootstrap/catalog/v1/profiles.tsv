@@ -1,0 +1,6 @@
+schema	brf-v1
+profile-alias	base	base@1
+profile-alias	omarchy	omarchy@1
+profile	base@1	arch	x86_64,aarch64	-	-
+profile	base@1	darwin	x86_64,arm64	-	-
+profile	omarchy@1	arch	x86_64,aarch64	base@1	-

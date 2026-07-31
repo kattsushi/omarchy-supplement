@@ -1,0 +1,4 @@
+schema	brf-v1
+pin	dotfiles-v2	git	github.com/kattsushi/dotfiles-v2	-	sha256	-
+pin	base-packages	version	catalog	v1	sha256	catalog-only
+pin	omarchy-3.8.4	version	omarchy	3.8.4	sha256	catalog-only
