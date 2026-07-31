@@ -1,0 +1,5 @@
+schema	brf-v1
+action	base@1	040	arch-base-packages	package	yes	arch.pacman	base-packages
+action	base@1	040	darwin-base-packages	package	yes	darwin.homebrew.formula	base-packages
+action	base@1	030	dotfiles-v2	dotfiles	yes	none	dotfiles-v2
+action	omarchy@1	070	omarchy-desktop	desktop	yes	none	omarchy-3.8.4

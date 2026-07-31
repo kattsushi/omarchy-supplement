@@ -1,0 +1,3 @@
+schema	brf-v1
+ownership	dotfiles-v2	common	config/example	.config/example
+ownership	omarchy-3.8.4	omarchy-desktop	config/override	.local/share/omarchy/override

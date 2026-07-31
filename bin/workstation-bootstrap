@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+# shellcheck source=../bootstrap/lib/core.sh
+source "$ROOT/bootstrap/lib/core.sh"
+source "$ROOT/bootstrap/lib/catalog.sh"
+source "$ROOT/bootstrap/lib/providers.sh"
+source "$ROOT/bootstrap/lib/dotfiles.sh"
+source "$ROOT/bootstrap/lib/resolve.sh"
+source "$ROOT/bootstrap/lib/plan.sh"
+usage() { bootstrap_error 'usage: workstation-bootstrap plan|check --profile NAME [--profile NAME...]'; exit "$BOOTSTRAP_INVALID"; }
+[[ $# -gt 0 ]] || usage
+command=$1; shift
+case "$command" in plan|check) ;; apply|verify) bootstrap_error "UNIMPLEMENTED_WORK_UNIT_B"; exit "$BOOTSTRAP_INVALID";; *) usage;; esac
+profiles=()
+while (($#)); do case "$1" in --profile) (($# >= 2)) || usage; profiles+=("$2"); shift 2;; --format) (($# >= 2)) || usage; [[ $2 == brf || $2 == human ]] || usage; shift 2;; *) usage;; esac; done
+((${#profiles[@]})) || usage
+bootstrap_fixture_guard
+CATALOG="${BOOTSTRAP_CATALOG_DIR:-$ROOT/bootstrap/catalog/v1}"
+validate_catalogs "$CATALOG"
+os=$(bootstrap_os); arch=$(bootstrap_arch)
+set +e
+payload=$(plan_emit "$CATALOG" "$os" "$arch" "${profiles[@]}")
+rc=$?
+set -e
+if ! plan_hash=$(printf '%s' "$payload" | bootstrap_hash); then
+  bootstrap_error "HASH_TOOL_MISSING"
+  exit "$BOOTSTRAP_REFUSAL"
+fi
+# The hash covers the exact canonical payload; the header is excluded from its own digest.
+printf 'plan_hash\t%s\n%s\n' "$plan_hash" "$payload"
+exit "$rc"
