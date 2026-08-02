@@ -1,0 +1,7 @@
+schema	control-files-v1
+file	.workstation/bin/workstation-dotfiles
+file	.workstation/control-files.tsv
+file	.workstation/lib/common.sh
+file	.workstation/lib/source.sh
+file	.workstation/profiles.tsv
+file	.workstation/source-files.tsv
