@@ -29,7 +29,7 @@ manifest_valid() {
 
 controls_valid() {
   local controls=$1 expected
-  expected=$'schema\tcontrol-files-v1\nfile\t.workstation/bin/workstation-dotfiles\nfile\t.workstation/control-files.tsv\nfile\t.workstation/lib/common.sh\nfile\t.workstation/lib/source.sh\nfile\t.workstation/profiles.tsv\nfile\t.workstation/source-files.tsv'
+  expected=$'schema\tcontrol-files-v1\nfile\t.workstation/bin/workstation-dotfiles\nfile\t.workstation/control-files.tsv\nfile\t.workstation/lib/common.sh\nfile\t.workstation/lib/materialize.sh\nfile\t.workstation/lib/source.sh\nfile\t.workstation/profiles.tsv\nfile\t.workstation/source-files.tsv'
   printf '%s\n' "$expected" | cmp -s "$controls" - 2>/dev/null || refuse CONTROL
 }
 
