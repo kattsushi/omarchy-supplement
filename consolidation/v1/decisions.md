@@ -8,15 +8,15 @@ staging, commit, push, PR, or home mutation.
 ## Decision records
 
 ```text
-import_method=pending
+import_method=snapshot
 backgrounds=include-separately
-import_authorization=pending
-size_exception=pending
+import_authorization=approved-non-media
+size_exception=approved-41-path-snapshot
 ```
 
 | Topic | Current state | Boundary |
 |---|---|---|
-| Import method | Pending maintainer approval | Snapshot is the proposed bounded method; no import is authorized. |
+| Import method | Approved non-media snapshot | Exactly 41 approved non-media paths are imported and verified; runtime materialization remains pending. |
 | Backgrounds | Included separately | All seven images stay media-only and require their own later boundary. |
 | Delivery | Feature-branch-chain | Tracker `feat/workstation-blueprint`; this slice `feat/consolidation-inventory`. |
 | Repository | Unchanged | Rename, remote changes, archive, and cutover remain deferred. |
@@ -38,5 +38,5 @@ is recorded.
 
 ## Deferred gates
 
-Import authorization and its measured size exception remain pending. Production import,
-media import, installers, and all advanced scope are deferred.
+Media import and runtime materialization remain pending. Installers, repository rename,
+remote changes, and all advanced scope are deferred; overall consolidation is not complete.
