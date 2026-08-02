@@ -29,6 +29,20 @@ case $args in
 esac
 EOF
 chmod +x "$work/bin/git"
+cat > "$work/bin/df" <<'EOF'
+#!/usr/bin/env bash
+set -eu
+count=$(cat "$DF_COUNT" 2>/dev/null || printf 0); count=$((count + 1)); printf %s "$count" > "$DF_COUNT"
+/usr/bin/df "$@"
+[ "$count" = 2 ] || exit 0
+parent=${!#}; stage=$(find "$parent" -maxdepth 1 -type d -name '.workstation-materialize-stage.*' -print -quit)
+case ${DF_MUTATION:-} in
+  extra) : > "$stage/extra";; missing) rm "$stage/README.md";; hash) printf x | dd of="$stage/.workstation/lib/common.sh" conv=notrunc status=none;; mode) chmod 600 "$stage/.workstation/lib/common.sh";;
+  link) rm "$stage/polybar/.config/launch_polybar.sh"; ln -s ../dotfiles/polybar/.config/not-present "$stage/polybar/.config/launch_polybar.sh";;
+  type) rm "$stage/.workstation/lib/common.sh"; ln -s ../README.md "$stage/.workstation/lib/common.sh";; nested-git) mkdir "$stage/.git";; signal) sleep 5;;
+esac
+EOF
+chmod +x "$work/bin/df"
 run() { [ "${1:-clean}" != ignored ] || : > "$work/target/.env"; PATH="$work/bin:$PATH" MOCK_TOP="$work/target" MOCK_CASE=${1:-clean} "$cli" materialize inspect --target "$work/target"; }
 expect() { local got want; want=$1; shift; set +e; got=$("$@" 2>&1); status=$?; set -e; [ "$got" = "$want" ] || fail "$want:$got"; case $want in $'status\trefused'*) [ "$status" -ne 0 ] || fail status;; *) [ "$status" = 0 ] || fail status;; esac; [[ $got != *"$work"* && $got != *injected* ]] || fail leak; }
 expect $'status\tabsent\teligible' env PATH="$work/bin:$PATH" MOCK_TOP="$work/missing" "$cli" materialize inspect --target "$work/missing"
@@ -55,4 +69,40 @@ fp_before=$("$work/dotfiles/.workstation/bin/workstation-dotfiles" materialize f
 printf '\n# sensitivity\n' >> "$work/dotfiles/.workstation/lib/materialize.sh"
 fp_after=$("$work/dotfiles/.workstation/bin/workstation-dotfiles" materialize fingerprint)
 [ "$fp_before" != "$fp_after" ] || fail fingerprint-sensitivity
+# Absent targets install the 48 manifest leaves plus seven control leaves exactly once.
+apply_target="$work/apply-target"
+apply_output=$("$cli" materialize apply --target "$apply_target" 2>&1) || fail "apply:$apply_output"
+[ "$apply_output" = $'status\tsuccess\tmaterialized' ] || fail "apply:$apply_output"
+[ "$(find "$apply_target" -type f -o -type l | wc -l)" = 55 ] || fail apply-leaves
+before=$(find "$work" -mindepth 1 -maxdepth 1 -printf '%f\n' | LC_ALL=C sort)
+apply_output=$("$cli" materialize apply --target "$apply_target" 2>&1) || fail "noop:$apply_output"
+[ "$apply_output" = $'status\tnoop\tunchanged' ] || fail "noop:$apply_output"
+after=$(find "$work" -mindepth 1 -maxdepth 1 -printf '%f\n' | LC_ALL=C sort)
+[ "$before" = "$after" ] || fail noop-sibling-mutation
+# Triangulation: unsafe, present, and locked targets are refused without mutation or leaks.
+expect_apply() { local want got status; want=$1; shift; set +e; got=$("$@" 2>&1); status=$?; set -e; [ "$got" = "$want" ] || fail "apply-refusal:$got"; [ "$status" = 2 ] || fail apply-refusal-status; [[ $got != *"$work"* && $got != *injected* ]] || fail apply-refusal-leak; }
+expect_apply $'status\trefused\tTARGET' "$cli" materialize apply --target relative
+expect_apply $'status\trefused\tRELATION' "$cli" materialize apply --target "$root/dotfiles/not-a-target"
+expected_before=$(find "$work/target" -printf '%P\n' | LC_ALL=C sort)
+expect_apply $'status\trefused\tEXPECTED_CLEAN_PENDING' env PATH="$work/bin:$PATH" MOCK_TOP="$work/target" MOCK_CASE=clean "$cli" materialize apply --target "$work/target"
+expected_after=$(find "$work/target" -printf '%P\n' | LC_ALL=C sort)
+[ "$expected_before" = "$expected_after" ] || fail expected-clean-mutation
+mkdir "$work/.workstation-materialize-lock"
+expect_apply $'status\trefused\tLOCKED' "$cli" materialize apply --target "$work/locked-target"
+[ ! -e "$work/locked-target" ] && [ -d "$work/.workstation-materialize-lock" ] || fail refusal-mutation
+rmdir "$work/.workstation-materialize-lock"
+# A PATH-only df shim mutates the stage during the final parent-space recheck.
+for mutation in extra missing hash mode link type nested-git; do
+  parent="$work/recheck-$mutation"; target="$parent/target"; mkdir "$parent"; : > "$parent/external-sentinel"
+  set +e; output=$(env PATH="$work/bin:$PATH" DF_COUNT="$parent/count" DF_MUTATION="$mutation" "$cli" materialize apply --target "$target" 2>&1); status=$?; set -e
+  [ "$status" -ne 0 ] && [ ! -e "$target" ] && [ -f "$parent/external-sentinel" ] || fail "recheck-$mutation:$output"
+  ! find "$parent" -maxdepth 1 -name '.workstation-materialize-*' -print -quit | grep -q . || fail "recheck-cleanup-$mutation"
+done
+mkdir "$work/no-df"; ln -s /usr/bin/bash "$work/no-df/bash"; ln -s /usr/bin/dirname "$work/no-df/dirname"; ln -s /usr/bin/uname "$work/no-df/uname"
+set +e; output=$(env PATH="$work/no-df" /usr/bin/bash "$cli" materialize apply --target "$work/missing-df" 2>&1); status=$?; set -e
+[ "$status" = 69 ] && [ "$output" = $'status\tfailed\tDEPENDENCY' ] || fail missing-df
+parent="$work/signal"; mkdir "$parent"; env PATH="$work/bin:$PATH" DF_COUNT="$parent/count" DF_MUTATION=signal "$cli" materialize apply --target "$parent/target" >"$parent/out" 2>&1 & pid=$!
+for _ in 1 2 3 4 5; do find "$parent" -name '.workstation-materialize-stage.*' -print -quit | grep -q . && break; sleep 1; done
+kill -TERM "$pid"; wait "$pid" || status=$?
+if [ -e "$parent/target" ] || find "$parent" -name '.workstation-materialize-*' -print -quit | grep -q .; then fail signal-cleanup; fi
 printf 'materialize tests: PASS\n'
