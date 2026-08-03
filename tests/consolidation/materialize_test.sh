@@ -83,18 +83,37 @@ expect $'status\trefused\tSPECIAL_TARGET' "$cli" materialize inspect --target "$
 expect $'status\trefused\tMANAGED_SOURCE' "$cli" materialize inspect --target "$root/dotfiles"
 expect $'status\trefused\tMANAGED_SOURCE' "$cli" materialize inspect --target "$root"
 cp -R "$root/dotfiles" "$work/exact-content"
-expect $'status\trefused\tUNMANAGED_DIRECTORY' "$cli" materialize inspect --target "$work/exact-content"
+expect $'status\tsuccess\tmaterialized' "$cli" materialize inspect --target "$work/exact-content"
+# RED: a source change during target fingerprinting must not yield materialized.
+cp -R "$root/dotfiles" "$work/race-source"
+cp -R "$root/dotfiles" "$work/race-target"
+cat > "$work/bin/sha256sum" <<'EOF'
+#!/usr/bin/env bash
+set -eu
+if [[ ${RACE_SOURCE:-} && ${RACE_TARGET:-} && "$*" == *"$RACE_TARGET"* ]]; then
+  count=$(cat "$RACE_COUNT" 2>/dev/null || printf 0); count=$((count + 1)); printf %s "$count" > "$RACE_COUNT"
+  if [ "$count" -ge 55 ] && ! -e "$RACE_MARK"; then
+    printf '\n# injected\n' >> "$RACE_SOURCE/starship/.config/starship.toml"
+    printf '\n# injected\n' >> "$RACE_SOURCE/.workstation/lib/materialize.sh"
+    : > "$RACE_MARK"
+  fi
+fi
+exec /usr/bin/sha256sum "$@"
+EOF
+chmod +x "$work/bin/sha256sum"
+set +e; race_inspect=$(env PATH="$work/bin:$PATH" RACE_SOURCE="$work/race-source" RACE_TARGET="$work/race-target" RACE_MARK="$work/race-mark" RACE_COUNT="$work/race-count" "$work/race-source/.workstation/bin/workstation-dotfiles" materialize inspect --target "$work/race-target" 2>&1); status=$?; set -e
+[ "$status" -ne 0 ] && [ "$race_inspect" = $'status\trefused\tSOURCE_CHANGED' ] && [ -e "$work/race-mark" ] && [[ $race_inspect != *"$work"* && $race_inspect != *sha256:* ]] || fail "source-race:$race_inspect"
 fp=$($cli materialize fingerprint); pattern=$'fingerprint\tsha256\t[0-9a-f]{64}'; [[ $fp =~ $pattern ]] || fail fingerprint
 cp -R "$root/dotfiles" "$work/dotfiles"
 fp_before=$("$work/dotfiles/.workstation/bin/workstation-dotfiles" materialize fingerprint)
 printf '\n# sensitivity\n' >> "$work/dotfiles/.workstation/lib/materialize.sh"
 fp_after=$("$work/dotfiles/.workstation/bin/workstation-dotfiles" materialize fingerprint)
 [ "$fp_before" != "$fp_after" ] || fail fingerprint-sensitivity
-# Absent targets install the 48 manifest leaves plus eight control leaves exactly once.
+# Absent targets install the 48 manifest leaves plus nine control leaves exactly once.
 apply_target="$work/apply-target"
 apply_output=$("$cli" materialize apply --target "$apply_target" 2>&1) || fail "apply:$apply_output"
 [ "$apply_output" = $'status\tsuccess\tmaterialized' ] || fail "apply:$apply_output"
-[ "$(find "$apply_target" -type f -o -type l | wc -l)" = 56 ] || fail apply-leaves
+[ "$(find "$apply_target" -type f -o -type l | wc -l)" = 57 ] || fail apply-leaves
 before=$(find "$work" -mindepth 1 -maxdepth 1 -printf '%f\n' | LC_ALL=C sort)
 apply_output=$("$cli" materialize apply --target "$apply_target" 2>&1) || fail "noop:$apply_output"
 [ "$apply_output" = $'status\tnoop\tunchanged' ] || fail "noop:$apply_output"

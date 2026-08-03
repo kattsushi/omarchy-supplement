@@ -38,5 +38,7 @@ stow:packages)
   stow_profile_packages "$profile" "$platform" "$root" || refuse PROFILE
   printf '%s\n' "${STOW_PACKAGES[@]}" | LC_ALL=C sort | while read -r package; do printf 'package\t%s\n' "$package"; done;;
 stow:check) shift 2; stow_check "$root" "$@";;
+stow:verify) shift 2; stow_verify "$root" "$@";;
+stow:apply) shift 2; stow_apply "$root" "$@";;
 *) refuse COMMAND;;
 esac
