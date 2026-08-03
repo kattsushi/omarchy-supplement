@@ -20,6 +20,17 @@ materialize_inspect() {
   top=$(CDPATH='' cd -- "$target" 2>/dev/null && pwd -P) || { materialize_status refused SPECIAL_TARGET; return 1; }
   source=$(CDPATH='' cd -- "$source" 2>/dev/null && pwd -P) || { materialize_status refused SOURCE; return 1; }
   case $source in "$top"|"$top"/*) materialize_status refused MANAGED_SOURCE; return 1;; esac
+  # An exact verified materialization is a target state, not a legacy checkout.
+  if (verify_source "$top" >/dev/null 2>&1); then
+    local source_fp_a source_fp_b target_fp_a target_fp_b
+    source_fp_a=$(materialize_fingerprint "$source" 2>/dev/null) || { materialize_status refused SOURCE; return 1; }
+    target_fp_a=$(materialize_fingerprint "$top" 2>/dev/null) || { materialize_status refused SOURCE; return 1; }
+    source_fp_b=$(materialize_fingerprint "$source" 2>/dev/null) || { materialize_status refused SOURCE_CHANGED; return 1; }
+    target_fp_b=$(materialize_fingerprint "$top" 2>/dev/null) || { materialize_status refused SOURCE_CHANGED; return 1; }
+    [ "$source_fp_a" = "$source_fp_b" ] && [ "$target_fp_a" = "$target_fp_b" ] && [ "$target_fp_b" = "$source_fp_b" ] && { materialize_status success materialized; return 0; }
+    materialize_status refused SOURCE_CHANGED
+    return 1
+  fi
   git -C "$top" rev-parse --is-inside-work-tree >/dev/null 2>&1 || { if (verify_source "$top" >/dev/null 2>&1); then materialize_status refused UNMANAGED_DIRECTORY; else materialize_status refused NON_GIT; fi; return 1; }
   [ "$(git -C "$top" rev-parse --show-toplevel 2>/dev/null)" = "$top" ] || { materialize_status refused NESTED_GIT; return 1; }
   remotes=$(git -C "$top" remote 2>/dev/null | wc -l) || { materialize_status refused NON_GIT; return 1; }
