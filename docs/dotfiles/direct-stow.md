@@ -1,6 +1,6 @@
 # Direct GNU Stow
 
-The copied dispatcher and repository wrapper expose package selection, preflight, apply, and independent link verification. Every mutating or verification command requires an explicit absolute target and platform; none uses the active home directory.
+The copied dispatcher and repository wrapper expose package selection, preflight, apply, and independent link verification. Every mutating or verification command requires a canonical absolute target path and platform; aliases, traversal, trailing slashes, and symlink components are refused. None uses the active home directory. A copied, verified materialized source at `TARGET/dotfiles` is supported; source-equals-target, target-below-source, and every other ancestor layout are refused.
 
 ```bash
 dotfiles/.workstation/bin/workstation-dotfiles stow packages --profile shared --platform linux

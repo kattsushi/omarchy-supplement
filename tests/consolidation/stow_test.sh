@@ -36,7 +36,12 @@ for pair in 'arch/omarchy darwin PROFILE' 'unknown linux PROFILE' 'shared nope P
 leaf=$(find "$root/dotfiles/nvim" -type f ! -name .gitignore -print -quit); relative=${leaf#"$root/dotfiles/nvim/"}; mkdir -p "$work/target/${relative%/*}"; printf unmanaged > "$work/target/$relative"
 for kind in file dir wrong dangling; do rm -rf "$work/target/$relative"; case $kind in file) : > "$work/target/$relative";; dir) mkdir "$work/target/$relative";; wrong) ln -s /bad "$work/target/$relative";; dangling) ln -s missing "$work/target/$relative";; esac; out=$(run env PATH="$work/bin:$PATH" "$cli" stow check --profile shared --platform linux --target "$work/target"); [[ $out = $'2\nstatus\trefused\tOCCUPIED' ]] || fail "$kind"; done
 rm -rf "$work/target/$relative"; ln -s "$leaf" "$work/target/$relative"; out=$(run env PATH="$work/bin:$PATH" STOW_CAPTURE="$work/capture" "$cli" stow check --profile shared --platform linux --target "$work/target"); [[ $out = $'0\nstatus\tsuccess\tchecked' ]] || fail exact-link
-rm "$work/target/$relative"; ln -s "$work/target" "$work/parent-link"; out=$(run env PATH="$work/bin:$PATH" "$cli" stow check --profile shared --platform linux --target "$work/parent-link"); [[ $out = $'2\nstatus\trefused\tSYMLINK_TARGET' ]] || fail parent-link
+    rm "$work/target/$relative"; ln -s "$work/target" "$work/parent-link"; lexical_before=$(snapshot "$work/target")
+    for target_alias in "$work//target" "$work/target/." "$work/target/../target" "$work/target/" target . .. "$work/parent-link"; do
+      out=$(run env PATH="$work/bin:$PATH" "$cli" stow check --profile shared --platform linux --target "$target_alias")
+      [[ $out = $'2\nstatus\trefused\tTARGET' && $out != *secret-stow-prose* ]] || fail "target-alias:$out"
+      [ "$lexical_before" = "$(snapshot "$work/target")" ] || fail target-alias-mutation
+    done
 out=$(run env PATH="$work/bin:$PATH" STOW_CAPTURE="$work/capture" STOW_FAIL=1 "$cli" stow check --profile shared --platform linux --target "$work/target"); [[ $out = $'2\nstatus\trefused\tSTOW_SIMULATION' && $out != *secret-stow-prose* ]] || fail simulation
 mkdir "$work/no-stow"; for tool in awk find grep sed sort comm tail stat sha256sum wc mktemp readlink cut rm cmp dirname bash; do ln -s "/usr/bin/$tool" "$work/no-stow/$tool"; done
 out=$(run env PATH="$work/no-stow" /usr/bin/bash "$cli" stow check --profile shared --platform linux --target "$work/target"); [[ $out = $'69\nstatus\tfailed\tDEPENDENCY' ]] || fail "dependency:$out"
@@ -49,7 +54,39 @@ out=$(run env PATH=/usr/bin:/bin HOME="$work/home" "$cli2" stow apply --profile 
 out=$(run env PATH=/usr/bin:/bin "$cli2" stow verify --profile shared --platform linux --target "$work/applied"); [[ $out = $'0\nstatus\tsuccess\tverified' ]] || fail "real-verify:$out"
 [ -L "$work/applied/.config/nvim/.gitignore" ] && [ "$(readlink -f "$work/applied/.config/nvim/.gitignore")" = "$work/source/nvim/.config/nvim/.gitignore" ] && [ ! -e "$work/applied/.stow-local-ignore" ] || fail gitignore
 find "$work/applied" -type l -print0 | while IFS= read -r -d '' link; do [ "$(readlink -f "$link")" = "$(readlink -f "$link")" ] || fail link; done
-mkdir "$work/arch"; out=$(run env PATH=/usr/bin:/bin "$cli2" stow apply --profile arch/omarchy --platform linux --target "$work/arch"); [[ $out = *$'0\nprofile\tarch/omarchy'*$'\nstatus\tsuccess\tapplied' ]] || fail "arch-apply:$out"; [ -L "$work/arch/.config/launch_polybar.sh" ] && [ -L "$work/arch/.config/nvim/.gitignore" ] || fail arch-links
+# A copied materialized source under TARGET/dotfiles is the sole supported ancestor topology.
+mkdir -p "$work/materialized/home"; cp -a "$root/dotfiles" "$work/materialized/home/dotfiles"; materialized_root=$work/materialized/home/dotfiles; materialized_cli=$materialized_root/.workstation/bin/workstation-dotfiles
+materialized_before=$(snapshot "$materialized_root"); [ "$(find "$materialized_root" \( -type f -o -type l \) | wc -l)" = 57 ] || fail materialized-leaves
+out=$(run env PATH=/usr/bin:/bin HOME="$work/home" "$materialized_cli" stow check --profile shared --platform linux --target "$work/materialized/home")
+[[ $out = $'0\nstatus\tsuccess\tchecked' ]] || fail "materialized-check:$out"
+out=$(run env PATH=/usr/bin:/bin "$materialized_cli" stow apply --profile arch/omarchy --platform linux --target "$work/materialized/home")
+[[ $out = *$'0\nprofile\tarch/omarchy'*$'\nstatus\tsuccess\tapplied' ]] || fail "materialized-apply:$out"
+out=$(run env PATH=/usr/bin:/bin "$materialized_cli" stow verify --profile arch/omarchy --platform linux --target "$work/materialized/home")
+[[ $out = $'0\nstatus\tsuccess\tverified' ]] || fail "materialized-verify:$out"
+materialized_target_before=$(snapshot "$work/materialized/home")
+out=$(run env PATH="$work/no-stow" /usr/bin/bash "$materialized_cli" stow apply --profile arch/omarchy --platform linux --target "$work/materialized/home")
+[[ $out = *$'0\nprofile\tarch/omarchy'*$'\nstatus\tnoop\tunchanged' ]] || fail "materialized-noop:$out"
+[ "$materialized_before" = "$(snapshot "$materialized_root")" ] && [ "$materialized_target_before" = "$(snapshot "$work/materialized/home")" ] || fail materialized-mutation
+[ -L "$work/materialized/home/.config/nvim/.gitignore" ] && [ -L "$work/materialized/home/.config/launch_polybar.sh" ] && [ ! -e "$work/materialized/home/.stow-local-ignore" ] || fail materialized-links
+    # Other source-under-target layouts, aliases, and target links refuse before Stow runs.
+    for layout in below wrong-name nested traversal; do
+      mkdir -p "$work/negative-$layout/home"; case $layout in
+        below) cp -a "$root/dotfiles" "$work/negative-$layout/home/dotfiles"; negative_cli=$work/negative-$layout/home/dotfiles/.workstation/bin/workstation-dotfiles; negative_target=$work/negative-$layout/home/dotfiles/nvim;;
+        wrong-name) cp -a "$root/dotfiles" "$work/negative-$layout/home/other"; negative_cli=$work/negative-$layout/home/other/.workstation/bin/workstation-dotfiles; negative_target=$work/negative-$layout/home;;
+        nested) mkdir "$work/negative-$layout/home/nested"; cp -a "$root/dotfiles" "$work/negative-$layout/home/nested/dotfiles"; negative_cli=$work/negative-$layout/home/nested/dotfiles/.workstation/bin/workstation-dotfiles; negative_target=$work/negative-$layout/home;;
+        traversal) cp -a "$root/dotfiles" "$work/negative-$layout/home/dotfiles"; negative_cli=$work/negative-$layout/home/dotfiles/.workstation/bin/workstation-dotfiles; negative_target=$work/negative-$layout/home/../home;;
+      esac
+      negative_before=$(snapshot "$work/negative-$layout/home"); out=$(run env PATH="$work/bin:$PATH" "$negative_cli" stow check --profile shared --platform linux --target "$negative_target"); [[ $out = $'2\nstatus\trefused\tTARGET' && $out != *secret-stow-prose* ]] || fail "negative-$layout:$out"; [ "$negative_before" = "$(snapshot "$work/negative-$layout/home")" ] || fail "negative-mutation-$layout"
+    done
+    mkdir -p "$work/negative-target-link/real"; cp -a "$root/dotfiles" "$work/negative-target-link/real/dotfiles"; ln -s "$work/negative-target-link/real" "$work/negative-target-link/alias"
+    out=$(run env PATH="$work/bin:$PATH" "$work/negative-target-link/real/dotfiles/.workstation/bin/workstation-dotfiles" stow check --profile shared --platform linux --target "$work/negative-target-link/alias")
+    [[ $out = $'2\nstatus\trefused\tTARGET' && $out != *secret-stow-prose* ]] || fail "negative-target-link:$out"
+    mkdir -p "$work/negative-source-link/home"; cp -a "$root/dotfiles" "$work/negative-source-link/real"; ln -s "$work/negative-source-link/real" "$work/negative-source-link/home/dotfiles"
+    out=$(run /usr/bin/bash -c 'source "$1/.workstation/lib/common.sh"; source "$1/.workstation/lib/stow.sh"; stow_check "$2" --profile shared --platform linux --target "$3"' _ "$root/dotfiles" "$work/negative-source-link/home/dotfiles" "$work/negative-source-link/home")
+    [[ $out = $'2\nstatus\trefused\tTARGET' ]] || fail "negative-source-link:$out"
+    mkdir -p "$work/ownership/nvim/dotfiles"; : > "$work/ownership/nvim/dotfiles/owned"; out=$(run /usr/bin/bash -c 'source "$1/.workstation/lib/common.sh"; source "$1/.workstation/lib/stow.sh"; STOW_PACKAGES=(nvim); STOW_SOURCE_UNDER_TARGET=1; stow_owners "$2"' _ "$root/dotfiles" "$work/ownership")
+    [[ $out = $'1' ]] || fail "ownership-source-subtree:$out"
+    mkdir "$work/arch"; out=$(run env PATH=/usr/bin:/bin "$cli2" stow apply --profile arch/omarchy --platform linux --target "$work/arch"); [[ $out = *$'0\nprofile\tarch/omarchy'*$'\nstatus\tsuccess\tapplied' ]] || fail "arch-apply:$out"; [ -L "$work/arch/.config/launch_polybar.sh" ] && [ -L "$work/arch/.config/nvim/.gitignore" ] || fail arch-links
 for kind in missing regular dangling escape intermediate; do cp -a "$work/applied" "$work/verify-$kind"; leaf="$work/verify-$kind/.config/nvim/init.lua"; case $kind in missing) rm "$leaf";; regular) rm "$leaf"; : > "$leaf";; dangling) rm "$leaf"; ln -s missing "$leaf";; escape) rm "$leaf"; ln -s /bad "$leaf";; intermediate) rm -rf "$work/verify-$kind/.config/nvim"; ln -s /bad "$work/verify-$kind/.config/nvim";; esac; out=$(run env PATH="$work/bin:$PATH" "$cli2" stow verify --profile shared --platform linux --target "$work/verify-$kind"); [[ $out = $'3\nstatus\tfailed\tSTOW_VERIFY' ]] || fail "verify-$kind:$out"; done
 applied_before=$(snapshot "$work/applied")
 out=$(run env PATH="$work/no-stow" /usr/bin/bash "$cli2" stow apply --profile shared --platform linux --target "$work/applied")

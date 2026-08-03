@@ -1,4 +1,4 @@
 schema	brf-v1
-pin	dotfiles-v2	embedded	embedded-materialized-tree	sha256:b9b881656c98b20f1b7ed7e65cb116f1f1df276dbfb920a742312f134ce95c05	sha256	complete-57-leaves
+pin	dotfiles-v2	embedded	embedded-materialized-tree	sha256:259efdd7a69226b86624f03f3bd8457898bdf45e0767cf9d3096d63b4beb4959	sha256	complete-57-leaves
 pin	base-packages	version	catalog	v1	sha256	catalog-only
 pin	omarchy-3.8.4	version	omarchy	3.8.4	sha256	catalog-only
