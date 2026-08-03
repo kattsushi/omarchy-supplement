@@ -1,25 +1,18 @@
-# Direct GNU Stow preflight
+# Direct GNU Stow
 
-The copied dispatcher and repository wrapper expose the same read-only package listing:
+The copied dispatcher and repository wrapper expose package selection, preflight, apply, and independent link verification. Every mutating or verification command requires an explicit absolute target and platform; none uses the active home directory.
 
 ```bash
 dotfiles/.workstation/bin/workstation-dotfiles stow packages --profile shared --platform linux
-bin/workstation-dotfiles stow packages --profile arch/omarchy --platform linux
-bin/workstation-dotfiles stow packages --profile macos --platform darwin
-```
-
-Check an explicit, absolute fixture target before any future apply work:
-
-```bash
 bin/workstation-dotfiles stow check --profile shared --platform linux --target /absolute/fixture-target
+bin/workstation-dotfiles stow apply --profile arch/omarchy --platform linux --target /absolute/fixture-target
+bin/workstation-dotfiles stow verify --profile macos --platform darwin --target /absolute/fixture-target
 ```
 
-The only Stow invocation made by `check` is, from the dotfiles source root:
+`apply` first performs exact independent verification. Complete links return `status\tnoop\tunchanged` without invoking Stow. Otherwise it repeats source, ownership, conflict, and simulation preflight, then invokes GNU Stow exactly once from the source root:
 
 ```text
-stow --simulate --verbose=2 --no-folding --target TARGET PACKAGE...
+stow --no-folding --target TARGET PACKAGE...
 ```
 
-It verifies the fixed source/control fingerprint, exact profile ownership, source leaves, target conflicts, and an exact simulation. It does not mutate source or target; Stow prose is suppressed and only stable status output is evidence. `--no-folding` keeps ownership checks leaf-exact. Apply, de-stow, adoption, and deletion are explicitly pending the next PR.
-
-Raw GNU Stow remains independently possible, but only this CLI check produces preflight evidence. GNU Stow 2.4.1 behavior is verified on Linux; macOS is unverified.
+`check` is read-only and uses `stow --simulate --verbose=2 --no-folding --target TARGET PACKAGE...`. Raw direct GNU Stow remains independently available, but only the wrapper produces this evidence. Linux fixtures cover GNU Stow 2.4.1; the macOS package selection is structural only and native macOS remains unverified.

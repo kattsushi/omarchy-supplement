@@ -7,3 +7,4 @@ file	.workstation/lib/source.sh
 file	.workstation/lib/stow.sh
 file	.workstation/profiles.tsv
 file	.workstation/source-files.tsv
+file	nvim/.stow-local-ignore
