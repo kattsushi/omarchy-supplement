@@ -14,7 +14,7 @@ need() { command -v "$1" >/dev/null 2>&1 || { printf 'status\tfailed\tDEPENDENCY
 for tool in git stow sha256sum find stat sort awk sed readlink; do need "$tool"; done
 [ "$(uname -s)" = Linux ] || { printf 'status\tunverified\tNO_NATIVE_RUNTIME\n'; exit 2; }
 safe() { [[ $1 =~ ^[A-Za-z0-9._+-]+$ ]] || { printf 'status\trefused\tVERSION\n'; exit 2; }; }
-version() { local value; value=$("$@" 2>/dev/null | sed -nE '1{s/.*([0-9]+([.][0-9]+)+).*/\1/p;}'); safe "$value"; printf '%s' "$value"; }
+version() { local value; value=$("$@" 2>/dev/null | awk 'NR==1 { if (match($0, /[0-9]+([.][0-9]+)+/)) print substr($0, RSTART, RLENGTH) }'); [[ $value =~ ^[A-Za-z0-9._+-]+$ ]] || return 2; printf '%s' "$value"; }
 git_state() { { git -C "$1" rev-parse HEAD; git -C "$1" write-tree; git -C "$1" status --porcelain=v1 --untracked-files=all; git -C "$1" for-each-ref --format='%(refname) %(objectname)'; git -C "$1" rev-parse --git-path HEAD; git -C "$1" rev-parse --git-path index; } | sha256sum | awk '{print $1}'; }
 tree_state() { find "$1" -printf '%P\t%m\t%y\t%l\t%T@\n' | LC_ALL=C sort | sha256sum | awk '{print $1}'; }
 work=$(mktemp -d "${TMPDIR:-/tmp}/platform-harness.XXXXXX") || exit 69
@@ -60,5 +60,7 @@ done
 # Freeze again immediately before evidence; no final PASS from changed candidate bytes.
 candidate_clean && [ "$(git -C "$root" rev-parse HEAD)" = "$initial_commit" ] && [ "$(git -C "$root" write-tree)" = "$initial_tree" ] || { printf 'status\tfailed\tCANDIDATE_CHANGED\n'; exit 3; }
 os_id=$(awk -F= '$1=="ID" {gsub(/"/,"",$2); print $2}' /etc/os-release); os_version=$(awk -F= '$1=="VERSION_ID" {gsub(/"/,"",$2); print $2}' /etc/os-release); os_version=${os_version:-unknown}; arch=$(uname -m); for token in "$os_id" "$os_version" "$arch"; do safe "$token"; done
-omarchy=$(version omarchy version); bash_version=$(version bash --version); git_version=$(version git --version); stow_version=$(version stow --version)
+if ! omarchy=$(version omarchy version) || ! bash_version=$(version bash --version) || ! git_version=$(version git --version) || ! stow_version=$(version stow --version); then
+  printf 'status\trefused\tVERSION\n'; exit 2
+fi
 printf 'schema\tplatform-evidence-v1\ncandidate\tcommit\t%s\ncandidate\ttree\t%s\nplatform\tlinux\nos\t%s\t%s\narch\t%s\nversion\tomarchy\t%s\nversion\tbash\t%s\nversion\tgit\t%s\nversion\tstow\t%s\nsource\tverify\tpass\nfingerprint\tstable\nmaterialize\tsuccess\nmaterialize\tnoop\nmaterialize\tleaves\t57\nprofile\tarch/omarchy\npackages\tcount\t13\npackages\tcanonical\tbackgrounds,ghostty-linux,hyprland,hyprlock,hyprmocha,hyprpaper,mako,nvim,polybar,starship,tmux,waybar,zshrc\nstow\tcheck\tpass\nstow\tapply\tpass\nstow\tverify\tpass\nstow\tnoop\tpass\nstow\ttarget-links\t%s\nbootstrap\tplan\tread-only-refusal\nbootstrap\tcheck\tread-only-refusal\nmanaged-source\tunchanged\nprivacy\tclear\nmacos\tunverified\tno-native-runtime\nstatus\tpass\n' "$commit" "$tree" "$os_id" "$os_version" "$arch" "$omarchy" "$bash_version" "$git_version" "$stow_version" "$links"

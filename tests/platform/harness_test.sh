@@ -27,7 +27,7 @@ exit 64
 EOF
 chmod +x "$work/bin/omarchy"
 mkdir "$work/active"; printf active >"$work/active/sentinel"
-run() { HOME="$work/active" PATH="${HARNESS_PATH:-$work/bin:/usr/bin:/bin}" "$candidate/tests/platform/run.sh" --managed-source "$managed"; }
+run() { HOME="$work/active" OMARCHY_VERSION="${OMARCHY_VERSION:-3.8.4}" PATH="${HARNESS_PATH:-$work/bin:/usr/bin:/bin}" "$candidate/tests/platform/run.sh" --managed-source "$managed"; }
 candidate_state() { { git -C "$candidate" rev-parse HEAD; git -C "$candidate" write-tree; git -C "$candidate" diff --no-ext-diff; git -C "$candidate" diff --cached --no-ext-diff; git -C "$candidate" ls-files --others --exclude-standard | while IFS= read -r path; do stat -c '%a:%F:%n' "$candidate/$path"; done; } | sha256sum; }
 out1=$(run) || fail harness
 out2=$(run) || fail repeat
@@ -42,7 +42,29 @@ printf '%s\n' "$out1" | awk -F '\t' '
   $1=="status" && $2=="pass" { pass=1 }
   END { exit !(ok&&commit&&tree&&leaves&&packages&&links&&pass) }' || fail evidence
 case $out1 in *"$work"*|*PLATFORM_PRIVACY_SENTINEL*) fail privacy;; esac
+evidence_version() { printf '%s\n' "$out1" | awk -F '\t' -v tool="$1" '$1=="version" && $2==tool { print $3; exit }'; }
+expected_first_version() {
+  local token
+  while IFS= read -r token; do
+    if [[ $token =~ ^[0-9]+([.][0-9]+)+$ ]]; then printf '%s\n' "$token"; return 0; fi
+  done < <("$@" 2>/dev/null | awk 'NR==1' | tr -cs '0123456789.' '\n')
+  return 1
+}
+[ "$(evidence_version omarchy)" = 3.8.4 ] || fail omarchy-version
+for tool in bash git stow; do
+  expected=$(expected_first_version "$tool" --version)
+  [ -n "$expected" ] && [ "$(evidence_version "$tool")" = "$expected" ] || fail "$tool-version"
+done
+# A first dotted token wins over later dotted numbers in the same first line.
+if adversarial=$(OMARCHY_VERSION='Omarchy 3.8.4 build 4.0.0' run 2>&1); then
+  [ "$(printf '%s\n' "$adversarial" | awk -F '\t' '$1=="version" && $2=="omarchy" { print $3; exit }')" = 3.8.4 ] || fail first-version-token
+else
+  fail adversarial-version
+fi
 [ "$(cat "$work/active/sentinel")" = active ] || fail active-home
+# Missing or unsafe version output is refused without exposing the injected value.
+if missing=$(OMARCHY_VERSION='Omarchy development' run 2>&1); then fail missing-version; fi
+[ "$missing" = $'status\trefused\tVERSION' ] || fail missing-version-output
 # Invalid version output is refused without exposing the injected value.
 if invalid=$(OMARCHY_VERSION='bad value' run 2>&1); then fail invalid-version; fi
 case $invalid in *'bad value'*|*$'status\tpass'*) fail version-privacy;; esac
