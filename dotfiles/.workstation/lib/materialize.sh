@@ -20,6 +20,17 @@ materialize_inspect() {
   top=$(CDPATH='' cd -- "$target" 2>/dev/null && pwd -P) || { materialize_status refused SPECIAL_TARGET; return 1; }
   source=$(CDPATH='' cd -- "$source" 2>/dev/null && pwd -P) || { materialize_status refused SOURCE; return 1; }
   case $source in "$top"|"$top"/*) materialize_status refused MANAGED_SOURCE; return 1;; esac
+  # An exact verified materialization is a target state, not a legacy checkout.
+  if (verify_source "$top" >/dev/null 2>&1); then
+    local source_fp_a source_fp_b target_fp_a target_fp_b
+    source_fp_a=$(materialize_fingerprint "$source" 2>/dev/null) || { materialize_status refused SOURCE; return 1; }
+    target_fp_a=$(materialize_fingerprint "$top" 2>/dev/null) || { materialize_status refused SOURCE; return 1; }
+    source_fp_b=$(materialize_fingerprint "$source" 2>/dev/null) || { materialize_status refused SOURCE_CHANGED; return 1; }
+    target_fp_b=$(materialize_fingerprint "$top" 2>/dev/null) || { materialize_status refused SOURCE_CHANGED; return 1; }
+    [ "$source_fp_a" = "$source_fp_b" ] && [ "$target_fp_a" = "$target_fp_b" ] && [ "$target_fp_b" = "$source_fp_b" ] && { materialize_status success materialized; return 0; }
+    materialize_status refused SOURCE_CHANGED
+    return 1
+  fi
   git -C "$top" rev-parse --is-inside-work-tree >/dev/null 2>&1 || { if (verify_source "$top" >/dev/null 2>&1); then materialize_status refused UNMANAGED_DIRECTORY; else materialize_status refused NON_GIT; fi; return 1; }
   [ "$(git -C "$top" rev-parse --show-toplevel 2>/dev/null)" = "$top" ] || { materialize_status refused NESTED_GIT; return 1; }
   remotes=$(git -C "$top" remote 2>/dev/null | wc -l) || { materialize_status refused NON_GIT; return 1; }
@@ -114,11 +125,104 @@ materialize_copy() {
   done < <(tail -n +2 "$source/.workstation/control-files.tsv")
 }
 
+materialize_target_identity() {
+  local target=$1 work
+  work=$(mktemp -d "${TMPDIR:-/tmp}/workstation-identity.XXXXXX") || return 1
+  {
+    stat -c '%d:%i:%f:%s:%y' -- "$target"
+    git -C "$target" rev-parse HEAD
+    git -C "$target" symbolic-ref --quiet HEAD
+    git -C "$target" rev-parse --abbrev-ref --symbolic-full-name '@{upstream}'
+    git -C "$target" remote get-url --all origin
+    git -C "$target" show-ref
+    git -C "$target" status --porcelain=v1 --untracked-files=all
+    git -C "$target" ls-files -s
+    git -C "$target" config --local --list
+    git -C "$target" write-tree
+  } > "$work/records" 2>/dev/null || { rm -rf -- "$work"; return 1; }
+  sha256sum "$work/records" | awk '{print $1}'
+  rm -rf -- "$work"
+}
+
+materialize_move() { mv -T --no-target-directory --no-clobber -- "$1" "$2"; }
+
+materialize_migrate_clean() {
+  local source=$1 target=$2 parent stage backup lock marker owner fp dev target_id backup_id reason installed_fp moved=0
+  parent=$(materialize_parent "$target") || { materialize_refuse PARENT; return $?; }
+  source=$(CDPATH='' cd -- "$source" 2>/dev/null && pwd -P) || { materialize_refuse SOURCE; return $?; }
+  [ "$(uname -s)" = Linux ] || { materialize_refuse PLATFORM_UNVERIFIED; return $?; }
+  for dependency in awk cp df mktemp sha256sum stat mv; do command -v "$dependency" >/dev/null 2>&1 || { materialize_status failed DEPENDENCY; return 69; }; done
+  fp=$(materialize_fingerprint "$source" 2>/dev/null) || { materialize_fail SOURCE; return $?; }
+  target_id=$(materialize_target_identity "$target" 2>/dev/null) || { materialize_fail IDENTITY; return $?; }
+  if ! materialize_parent_ok "$parent" "$parent" || ! materialize_space_ok "$source" "$parent"; then
+    materialize_refuse PARENT
+    return $?
+  fi
+  lock=$parent/.workstation-materialize-lock; mkdir -- "$lock" 2>/dev/null || { materialize_refuse LOCKED; return $?; }
+  owner="$$:$RANDOM"; marker=$lock/owner; umask 077; printf '%s' "$owner" > "$marker" || { materialize_fail LOCK; return $?; }
+  cleanup() { [ "${moved:-0}" = 0 ] && { [ -n "${stage:-}" ] && [ -d "$stage" ] && rm -rf -- "$stage" || :; [ -n "${backup:-}" ] && [ -d "$backup" ] && rmdir -- "$backup" 2>/dev/null || :; [ -f "${marker:-}" ] && [ "$(cat "$marker" 2>/dev/null)" = "${owner:-}" ] && rm -rf -- "${lock:-}" || :; }; }
+  trap cleanup EXIT; trap 'cleanup; exit 3' HUP INT TERM
+  stage=$(mktemp -d "$parent/.workstation-materialize-stage.XXXXXX") || { materialize_fail STAGE; return $?; }; chmod 700 "$stage" || { materialize_fail STAGE; return $?; }
+  backup=$(mktemp -d "$parent/.workstation-backup.XXXXXX") || { materialize_fail BACKUP; return $?; }
+  chmod 700 "$backup" || { materialize_fail BACKUP; return $?; }
+  if ! rmdir -- "$backup" 2>/dev/null; then
+    materialize_fail BACKUP
+    return $?
+  fi
+  dev=$(stat -c %d "$parent"); [ "$(stat -c %d "$stage")" = "$dev" ] || { materialize_fail DEVICE; return $?; }
+  materialize_copy "$source" "$stage" || { materialize_fail COPY; return $?; }; materialize_stage_ok "$stage" "$fp" || { materialize_fail VERIFY; return $?; }
+  if ! materialize_parent_ok "$parent" "$parent" || ! materialize_space_ok "$source" "$parent" || [ "$(stat -c %d "$parent")" != "$dev" ] || [ "$(cat "$marker" 2>/dev/null)" != "$owner" ] || [ "$(materialize_fingerprint "$source" 2>/dev/null)" != "$fp" ]; then
+    materialize_fail RECHECK
+    return $?
+  fi
+  reason=$(materialize_inspect "$source" "$target" 2>/dev/null || :)
+  if [ "$reason" != $'status\tsuccess\texpected-clean' ] || [ "$(materialize_target_identity "$target" 2>/dev/null)" != "$target_id" ]; then
+    materialize_fail RECHECK
+    return $?
+  fi
+  if ! materialize_stage_ok "$stage" "$fp"; then
+    materialize_fail VERIFY
+    return $?
+  fi
+  materialize_move "$target" "$backup" 2>/dev/null || { materialize_fail RENAME; return $?; }; moved=1; trap - HUP INT TERM
+  reason=$(materialize_inspect "$source" "$backup" 2>/dev/null || :); backup_id=$(materialize_target_identity "$backup" 2>/dev/null || :)
+  if [ "$reason" != $'status\tsuccess\texpected-clean' ] || [ "$backup_id" != "$target_id" ]; then
+    if [ ! -e "$target" ] && ! [ -L "$target" ] && materialize_move "$backup" "$target" 2>/dev/null; then
+      if [ "$(materialize_target_identity "$target" 2>/dev/null || :)" = "$target_id" ]; then
+        moved=0; cleanup; trap - EXIT; materialize_status failed BACKUP_VERIFY_RESTORED
+      else
+        trap - EXIT; materialize_status failed MANUAL_RESTORE; printf 'recovery\ttarget-stage-lock\n'
+      fi
+    else
+      trap - EXIT; materialize_status failed MANUAL_RESTORE; printf 'recovery\ttarget-stage-lock\n'
+    fi
+    return 3
+  fi
+  materialize_move "$stage" "$target" 2>/dev/null || {
+    if [ ! -e "$target" ] && ! [ -L "$target" ] && materialize_move "$backup" "$target" 2>/dev/null; then
+      if [ "$(materialize_target_identity "$target" 2>/dev/null || :)" = "$target_id" ]; then
+        moved=0; cleanup; trap - EXIT; materialize_status failed BACKUP_VERIFY_RESTORED
+      else
+        trap - EXIT; materialize_status failed MANUAL_RESTORE; printf 'recovery\ttarget-stage-lock\n'
+      fi
+    else
+      trap - EXIT; materialize_status failed MANUAL_RESTORE; printf 'recovery\ttarget-stage-lock\n'
+    fi
+    return 3; }
+  stage=
+  if ! (verify_source "$target" >/dev/null 2>&1) || ! installed_fp=$(materialize_fingerprint "$target" 2>/dev/null) || [ "$installed_fp" != "$fp" ]; then [ -f "$marker" ] && [ "$(cat "$marker" 2>/dev/null)" = "$owner" ] && rm -rf -- "$lock"; trap - EXIT; materialize_status failed INSTALLED_VERIFY; printf 'backup\tsibling:%s\n' "${backup##*.workstation-backup.}"; return 3; fi
+  materialize_status success materialized; printf 'backup\tsibling:%s\n' "${backup##*.workstation-backup.}"; moved=0; cleanup; trap - EXIT
+}
+
 materialize_apply() {
   local source=$1 target=${3:-} parent='' stage='' lock='' marker='' owner='' fp='' installed_fp='' reason='' dev=''
   [ "$#" = 3 ] && [ "${2:-}" = --target ] || { materialize_status refused ARGUMENT; return 64; }
   case $target in /*) ;; *) materialize_refuse TARGET; return $?;; esac
   [[ $target != *$'\t'* && $target != *$'\n'* && $target != */./* && $target != */../* && $target != */. && $target != */.. && ${target##*/} =~ ^[A-Za-z0-9._-]+$ ]] || { materialize_refuse TARGET; return $?; }
+  if [ -e "$target" ] || [ -L "$target" ]; then
+    reason=$(materialize_inspect "$source" "$target" 2>/dev/null || :)
+    [ "$reason" != $'status\tsuccess\texpected-clean' ] || { materialize_migrate_clean "$source" "$target"; return $?; }
+  fi
   [ "$target" != / ] && [ ! -e "$target" ] && [ ! -L "$target" ] || {
     if (verify_source "$target" >/dev/null 2>&1) && fp=$(materialize_fingerprint "$source" 2>/dev/null) && [ "$fp" = "$(materialize_fingerprint "$target" 2>/dev/null)" ]; then materialize_status noop unchanged; return 0; fi
     reason=$(materialize_inspect "$source" "$target" 2>/dev/null || :)

@@ -8,6 +8,8 @@ root=$(CDPATH='' cd -- "$here/../.." 2>/dev/null && pwd) || { printf 'refusal\tR
 . "$root/.workstation/lib/source.sh"
 # shellcheck disable=SC1091 # Dynamic repository-root source path.
 . "$root/.workstation/lib/materialize.sh"
+# shellcheck disable=SC1091 # Dynamic repository-root source path.
+. "$root/.workstation/lib/stow.sh"
 inventory=
 if [ "${1:-}" = --inventory ]; then inventory=${2:-}; shift 2; fi
 case "${1:-}:${2:-}" in
@@ -31,7 +33,12 @@ stow:packages)
   [ -n "$platform" ] || case "$(uname -s)" in Linux) platform=linux;; Darwin) platform=darwin;; *) refuse PLATFORM;; esac
   row=$(awk -F '\t' -v p="$profile" '$1==p {print}' "$root/.workstation/profiles.tsv" 2>/dev/null) || refuse PROFILE
   [ "$(printf '%s\n' "$row" | sed '/^$/d' | wc -l 2>/dev/null)" = 1 ] || refuse PROFILE
-  IFS=$'\t' read -r _ expected packages <<< "$row"; [ "$expected" = any ] || [ "$expected" = "$platform" ] || refuse PLATFORM
-  profiles_valid "$root/.workstation/profiles.tsv" "$root"; printf '%s' "$packages" | tr , '\n' | LC_ALL=C sort | while read -r package; do printf 'package\t%s\n' "$package"; done;;
+  IFS=$'\t' read -r _ expected _ <<< "$row"; [ "$expected" = any ] || [ "$expected" = "$platform" ] || refuse PLATFORM
+  profiles_valid "$root/.workstation/profiles.tsv" "$root"
+  stow_profile_packages "$profile" "$platform" "$root" || refuse PROFILE
+  printf '%s\n' "${STOW_PACKAGES[@]}" | LC_ALL=C sort | while read -r package; do printf 'package\t%s\n' "$package"; done;;
+stow:check) shift 2; stow_check "$root" "$@";;
+stow:verify) shift 2; stow_verify "$root" "$@";;
+stow:apply) shift 2; stow_apply "$root" "$@";;
 *) refuse COMMAND;;
 esac

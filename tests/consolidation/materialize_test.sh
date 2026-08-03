@@ -12,7 +12,7 @@ set -eu
 args="$*"
 case $args in
   *'rev-parse --is-inside-work-tree'*) [ "${MOCK_CASE:-clean}" != non-git ] && printf true ;;
-  *'rev-parse --show-toplevel'*) printf '%s\n' "${MOCK_GIT_TOP:-$MOCK_TOP}" ;;
+  *'rev-parse --show-toplevel'*) printf '%s\n' "${MOCK_GIT_TOP:-${MOCK_TOP:-$2}}" ;;
   *'remote get-url --all origin'*) [ "${MOCK_CASE:-clean}" != wrong-remote ] && printf '%s\n' "${MOCK_URL:-git@github.com:kattsushi/dotfiles-v2.git}" ;;
   *' remote'*) [ "${MOCK_CASE:-clean}" = multiple ] && printf 'origin\nother\n' || printf 'origin\n' ;;
   *'rev-parse HEAD'*) printf '%s\n' "${MOCK_PIN:-6e36129058e5b0550ef5345e192557e785befbf5}" ;;
@@ -25,7 +25,11 @@ case $args in
   *check-ignore*) [ "${MOCK_CASE:-clean}" = ignored ] ;;
   *'merge-base --is-ancestor refs/remotes/origin/master HEAD'*) [ "${MOCK_CASE:-clean}" != divergent ] ;;
   *'merge-base --is-ancestor HEAD refs/remotes/origin/master'*) [ "${MOCK_CASE:-clean}" != unpushed ] ;;
-  *) exit 1 ;;
+  *'status --porcelain=v1'*) ;;
+  *'ls-files -s'*) ;;
+  *'config --local --list'*) ;;
+  *write-tree*) printf tree ;;
+      *) exit 1 ;;
 esac
 EOF
 chmod +x "$work/bin/git"
@@ -39,10 +43,27 @@ parent=${!#}; stage=$(find "$parent" -maxdepth 1 -type d -name '.workstation-mat
 case ${DF_MUTATION:-} in
   extra) : > "$stage/extra";; missing) rm "$stage/README.md";; hash) printf x | dd of="$stage/.workstation/lib/common.sh" conv=notrunc status=none;; mode) chmod 600 "$stage/.workstation/lib/common.sh";;
   link) rm "$stage/polybar/.config/launch_polybar.sh"; ln -s ../dotfiles/polybar/.config/not-present "$stage/polybar/.config/launch_polybar.sh";;
-  type) rm "$stage/.workstation/lib/common.sh"; ln -s ../README.md "$stage/.workstation/lib/common.sh";; nested-git) mkdir "$stage/.git";; signal) sleep 5;;
+  type) rm "$stage/.workstation/lib/common.sh"; ln -s ../README.md "$stage/.workstation/lib/common.sh";; nested-git) mkdir "$stage/.git";; signal) sleep 5;; target) : > "$TARGET_MUTATION";;
 esac
 EOF
 chmod +x "$work/bin/df"
+cat > "$work/bin/mv" <<'EOF'
+#!/usr/bin/env bash
+set -eu
+if [ -n "${MV_COUNT:-}" ]; then count=$(cat "$MV_COUNT" 2>/dev/null || printf 0); printf %s "$((count + 1))" > "$MV_COUNT"; fi
+exec /usr/bin/mv "$@"
+EOF
+chmod +x "$work/bin/mv"
+cat > "$work/bin/rmdir" <<'EOF'
+#!/usr/bin/env bash
+set -eu
+path=${!#}
+if [ -n "${RMDIR_INJECTED:-}" ] && [[ $path == *.workstation-backup.* ]]; then
+  printf '%s' "$RMDIR_INJECTED" > "$path/foreign-marker"
+fi
+exec /usr/bin/rmdir "$@"
+EOF
+chmod +x "$work/bin/rmdir"
 run() { [ "${1:-clean}" != ignored ] || : > "$work/target/.env"; PATH="$work/bin:$PATH" MOCK_TOP="$work/target" MOCK_CASE=${1:-clean} "$cli" materialize inspect --target "$work/target"; }
 expect() { local got want; want=$1; shift; set +e; got=$("$@" 2>&1); status=$?; set -e; [ "$got" = "$want" ] || fail "$want:$got"; case $want in $'status\trefused'*) [ "$status" -ne 0 ] || fail status;; *) [ "$status" = 0 ] || fail status;; esac; [[ $got != *"$work"* && $got != *injected* ]] || fail leak; }
 expect $'status\tabsent\teligible' env PATH="$work/bin:$PATH" MOCK_TOP="$work/missing" "$cli" materialize inspect --target "$work/missing"
@@ -62,18 +83,37 @@ expect $'status\trefused\tSPECIAL_TARGET' "$cli" materialize inspect --target "$
 expect $'status\trefused\tMANAGED_SOURCE' "$cli" materialize inspect --target "$root/dotfiles"
 expect $'status\trefused\tMANAGED_SOURCE' "$cli" materialize inspect --target "$root"
 cp -R "$root/dotfiles" "$work/exact-content"
-expect $'status\trefused\tUNMANAGED_DIRECTORY' "$cli" materialize inspect --target "$work/exact-content"
+expect $'status\tsuccess\tmaterialized' "$cli" materialize inspect --target "$work/exact-content"
+# RED: a source change during target fingerprinting must not yield materialized.
+cp -R "$root/dotfiles" "$work/race-source"
+cp -R "$root/dotfiles" "$work/race-target"
+cat > "$work/bin/sha256sum" <<'EOF'
+#!/usr/bin/env bash
+set -eu
+if [[ ${RACE_SOURCE:-} && ${RACE_TARGET:-} && "$*" == *"$RACE_TARGET"* ]]; then
+  count=$(cat "$RACE_COUNT" 2>/dev/null || printf 0); count=$((count + 1)); printf %s "$count" > "$RACE_COUNT"
+  if [ "$count" -ge 55 ] && ! -e "$RACE_MARK"; then
+    printf '\n# injected\n' >> "$RACE_SOURCE/starship/.config/starship.toml"
+    printf '\n# injected\n' >> "$RACE_SOURCE/.workstation/lib/materialize.sh"
+    : > "$RACE_MARK"
+  fi
+fi
+exec /usr/bin/sha256sum "$@"
+EOF
+chmod +x "$work/bin/sha256sum"
+set +e; race_inspect=$(env PATH="$work/bin:$PATH" RACE_SOURCE="$work/race-source" RACE_TARGET="$work/race-target" RACE_MARK="$work/race-mark" RACE_COUNT="$work/race-count" "$work/race-source/.workstation/bin/workstation-dotfiles" materialize inspect --target "$work/race-target" 2>&1); status=$?; set -e
+[ "$status" -ne 0 ] && [ "$race_inspect" = $'status\trefused\tSOURCE_CHANGED' ] && [ -e "$work/race-mark" ] && [[ $race_inspect != *"$work"* && $race_inspect != *sha256:* ]] || fail "source-race:$race_inspect"
 fp=$($cli materialize fingerprint); pattern=$'fingerprint\tsha256\t[0-9a-f]{64}'; [[ $fp =~ $pattern ]] || fail fingerprint
 cp -R "$root/dotfiles" "$work/dotfiles"
 fp_before=$("$work/dotfiles/.workstation/bin/workstation-dotfiles" materialize fingerprint)
 printf '\n# sensitivity\n' >> "$work/dotfiles/.workstation/lib/materialize.sh"
 fp_after=$("$work/dotfiles/.workstation/bin/workstation-dotfiles" materialize fingerprint)
 [ "$fp_before" != "$fp_after" ] || fail fingerprint-sensitivity
-# Absent targets install the 48 manifest leaves plus seven control leaves exactly once.
+# Absent targets install the 48 manifest leaves plus nine control leaves exactly once.
 apply_target="$work/apply-target"
 apply_output=$("$cli" materialize apply --target "$apply_target" 2>&1) || fail "apply:$apply_output"
 [ "$apply_output" = $'status\tsuccess\tmaterialized' ] || fail "apply:$apply_output"
-[ "$(find "$apply_target" -type f -o -type l | wc -l)" = 55 ] || fail apply-leaves
+[ "$(find "$apply_target" -type f -o -type l | wc -l)" = 57 ] || fail apply-leaves
 before=$(find "$work" -mindepth 1 -maxdepth 1 -printf '%f\n' | LC_ALL=C sort)
 apply_output=$("$cli" materialize apply --target "$apply_target" 2>&1) || fail "noop:$apply_output"
 [ "$apply_output" = $'status\tnoop\tunchanged' ] || fail "noop:$apply_output"
@@ -83,10 +123,17 @@ after=$(find "$work" -mindepth 1 -maxdepth 1 -printf '%f\n' | LC_ALL=C sort)
 expect_apply() { local want got status; want=$1; shift; set +e; got=$("$@" 2>&1); status=$?; set -e; [ "$got" = "$want" ] || fail "apply-refusal:$got"; [ "$status" = 2 ] || fail apply-refusal-status; [[ $got != *"$work"* && $got != *injected* ]] || fail apply-refusal-leak; }
 expect_apply $'status\trefused\tTARGET' "$cli" materialize apply --target relative
 expect_apply $'status\trefused\tRELATION' "$cli" materialize apply --target "$root/dotfiles/not-a-target"
-expected_before=$(find "$work/target" -printf '%P\n' | LC_ALL=C sort)
-expect_apply $'status\trefused\tEXPECTED_CLEAN_PENDING' env PATH="$work/bin:$PATH" MOCK_TOP="$work/target" MOCK_CASE=clean "$cli" materialize apply --target "$work/target"
-expected_after=$(find "$work/target" -printf '%P\n' | LC_ALL=C sort)
-[ "$expected_before" = "$expected_after" ] || fail expected-clean-mutation
+set +e; expected_output=$(env PATH="$work/bin:$PATH" DF_COUNT="$work/expected-df-count" MOCK_CASE=clean "$cli" materialize apply --target "$work/target" 2>&1); status=$?; set -e
+[ "$status" = 0 ] && [[ $expected_output =~ ^$'status\tsuccess\tmaterialized\nbackup\tsibling:'[A-Za-z0-9]+$ ]] || fail "expected-clean:$expected_output"
+[ -d "$(find "$work" -maxdepth 1 -type d -name '.workstation-backup.*' -print -quit)" ] || fail expected-clean-backup
+# A target mutation during final df recheck must stop before either rename.
+mkdir "$work/target-race"
+set +e; race_output=$(env PATH="$work/bin:$PATH" DF_COUNT="$work/race-df-count" DF_MUTATION=target TARGET_MUTATION="$work/target-race/race" MV_COUNT="$work/race-mv-count" MOCK_CASE=clean "$cli" materialize apply --target "$work/target-race" 2>&1); race_status=$?; set -e
+[ "$race_status" = 3 ] && [ "$race_output" = $'status\tfailed\tRECHECK' ] && [ "$(cat "$work/race-mv-count" 2>/dev/null || printf 0)" = 0 ] && [ -d "$work/target-race" ] || fail target-race
+# A foreign reservation blocks safely without exposing its path or rmdir diagnostics.
+mkdir "$work/target-collision"
+set +e; collision_output=$(env PATH="$work/bin:$PATH" DF_COUNT="$work/collision-df-count" RMDIR_INJECTED=INJECTED_RESERVATION "$cli" materialize apply --target "$work/target-collision" 2>&1); collision_status=$?; set -e
+[ "$collision_status" = 3 ] && [ "$collision_output" = $'status\tfailed\tBACKUP' ] && [[ $collision_output != *INJECTED_RESERVATION* && $collision_output != */tmp/* && $collision_output != *rmdir* ]] && find "$work" -path '*/.workstation-backup.*/foreign-marker' -exec grep -qx INJECTED_RESERVATION {} \; -print | grep -q . && [ -d "$work/target-collision" ] || fail reservation-collision
 mkdir "$work/.workstation-materialize-lock"
 expect_apply $'status\trefused\tLOCKED' "$cli" materialize apply --target "$work/locked-target"
 [ ! -e "$work/locked-target" ] && [ -d "$work/.workstation-materialize-lock" ] || fail refusal-mutation

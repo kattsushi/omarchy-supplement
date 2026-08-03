@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
-# shellcheck source=assertions.sh
+# shellcheck disable=SC1091 # Test helper is resolved from the repository root.
 source "$ROOT/tests/bootstrap/assertions.sh"
 FIXTURE="$(mktemp -d "${TMPDIR:-/tmp}/omarchy-bootstrap.XXXXXX")"
 trap 'rm -rf "$FIXTURE"' EXIT
@@ -69,50 +69,30 @@ test_profile_determinism_and_isolation() {
 }
 
 test_dotfiles_and_immutability_guards() {
-	local before after
+	local before after catalog="$FIXTURE/embedded-catalog"
 	before="$(tree_fingerprint "$HOME")"
 	expect_refusal run_cli check --profile base
 	after="$(tree_fingerprint "$HOME")"
-	[[ "$before" == "$after" ]] || {
-		fail "check mutated fixture"
-		return 1
-	}
-	assert_file_contains "$FIXTURE/out" "PIN_MISSING" || return 1
-	git init -q "$HOME/dotfiles"
-	git -C "$HOME/dotfiles" config user.email fixture@example.invalid
-	git -C "$HOME/dotfiles" config user.name fixture
-	printf 'x\n' >"$HOME/dotfiles/file"
-	git -C "$HOME/dotfiles" add file
-	git -C "$HOME/dotfiles" commit -qm fixture
-	git -C "$HOME/dotfiles" remote add origin https://example.invalid/wrong/dotfiles.git
-	local wrong_catalog="$FIXTURE/wrong-catalog"
-	cp -R "$ROOT/bootstrap/catalog/v1" "$wrong_catalog"
-	sed -i 's/^pin\tdotfiles-v2\tgit\tgithub.com\/kattsushi\/dotfiles-v2\t-\tsha256\t-$/pin\tdotfiles-v2\tgit\tgithub.com\/kattsushi\/dotfiles-v2\taaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\tsha256\tfixture/' "$wrong_catalog/pins.tsv"
-	expect_refusal env BOOTSTRAP_CATALOG_DIR="$wrong_catalog" "$ROOT/bin/workstation-bootstrap" check --profile base
-	assert_file_contains "$FIXTURE/out" "DOTFILES_REMOTE_MISMATCH" || return 1
-	rm -rf "$HOME/dotfiles"
-	git init -q "$HOME/dotfiles"
-	git -C "$HOME/dotfiles" config user.email fixture@example.invalid
-	git -C "$HOME/dotfiles" config user.name fixture
-	mkdir -p "$HOME/dotfiles/common/config"
-	printf 'fixture\n' >"$HOME/dotfiles/common/config/example"
-	git -C "$HOME/dotfiles" add common/config/example
-	git -C "$HOME/dotfiles" commit -qm expected
-	git -C "$HOME/dotfiles" remote add origin https://github.com/kattsushi/dotfiles-v2.git
-	local head catalog="$FIXTURE/ready-catalog"
-	head=$(git -C "$HOME/dotfiles" rev-parse HEAD)
-	cp -R "$ROOT/bootstrap/catalog/v1" "$catalog"
-	sed -i "s/^pin\\tdotfiles-v2\\tgit\\tgithub.com\\/kattsushi\\/dotfiles-v2\\t-\\tsha256\\t-$/pin\\tdotfiles-v2\\tgit\\tgithub.com\\/kattsushi\\/dotfiles-v2\\t$head\\tsha256\\tfixture/" "$catalog/pins.tsv"
-	expect_refusal env BOOTSTRAP_CATALOG_DIR="$catalog" "$ROOT/bin/workstation-bootstrap" check --profile base
+	[[ "$before" == "$after" ]] || { fail "check mutated fixture"; return 1; }
+	assert_file_contains "$FIXTURE/out" "DOTFILES_MISSING" || return 1
+	# An exact embedded materialization is ready without a Git repository or remote.
+	cp -R "$ROOT/dotfiles" "$HOME/dotfiles"
+	mkdir "$FIXTURE/no-git"
+	printf '#!/usr/bin/env bash\nexit 99\n' >"$FIXTURE/no-git/git"
+	chmod +x "$FIXTURE/no-git/git"
+	expect_refusal env PATH="$FIXTURE/no-git:$PATH" "$ROOT/bin/workstation-bootstrap" check --profile base
 	assert_file_contains "$FIXTURE/out" "PROVIDER_APPLY_UNIMPLEMENTED" || return 1
-	printf 'dirty\n' >>"$HOME/dotfiles/common/config/example"
+	assert_file_not_contains "$FIXTURE/out" "DOTFILES_REMOTE_MISMATCH" || return 1
+	cp -R "$ROOT/bootstrap/catalog/v1" "$catalog"
+	sed -i 's/sha256:[0-9a-f]\{64\}/sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/' "$catalog/pins.tsv"
 	expect_refusal env BOOTSTRAP_CATALOG_DIR="$catalog" "$ROOT/bin/workstation-bootstrap" check --profile base
-	assert_file_contains "$FIXTURE/out" "DOTFILES_DIRTY" || return 1
-	printf 'fixture\n' >"$HOME/dotfiles/common/config/example"
-	mkdir -p "$HOME/.config"
-	printf 'unmanaged\n' >"$HOME/.config/example"
+	assert_file_contains "$FIXTURE/out" "DOTFILES_EMBEDDED_PIN_MISMATCH" || return 1
+	cp "$ROOT/bootstrap/catalog/v1/pins.tsv" "$catalog/pins.tsv"
+	sed -i 's/\tembedded\t/\tgit\t/' "$catalog/pins.tsv"
 	expect_refusal env BOOTSTRAP_CATALOG_DIR="$catalog" "$ROOT/bin/workstation-bootstrap" check --profile base
-	assert_file_contains "$FIXTURE/out" "TARGET_UNMANAGED" || return 1
+	assert_file_contains "$FIXTURE/out" "PIN_MISSING" || return 1
+	printf 'malformed\n' >"$catalog/pins.tsv"
+	expect_exit 64 env BOOTSTRAP_CATALOG_DIR="$catalog" "$ROOT/bin/workstation-bootstrap" check --profile base
 	rm -rf "$HOME/dotfiles"
 	mkdir -p "$HOME/.local/share/omarchy"
 	expect_refusal run_cli check --profile omarchy
@@ -149,39 +129,20 @@ test_safe_boundaries() {
 	assert_file_not_contains "$FIXTURE/out" "SENTINEL_SECRET_VALUE"
 }
 
-# RED: Work-A acceptance requires every plan-relevant engine/catalog/source fact to be
-# visible in canonical identity, SSH remote normalization, and bounded Omarchy baselines.
+# Embedded verification participates in canonical identity without external checkout facts.
 test_acceptance_gap_contract() {
 	expect_refusal run_cli plan --profile base
 	assert_file_contains "$FIXTURE/out" $'engine_digest\tsha256:' || return 1
 	assert_file_contains "$FIXTURE/out" $'catalog_digest\tsha256:' || return 1
-	local catalog="$FIXTURE/ssh-catalog"
-	cp -R "$ROOT/bootstrap/catalog/v1" "$catalog"
-	git init -q "$HOME/dotfiles"
-	git -C "$HOME/dotfiles" config user.email fixture@example.invalid
-	git -C "$HOME/dotfiles" config user.name fixture
-	mkdir -p "$HOME/dotfiles/common/config"
-	printf 'fixture\n' >"$HOME/dotfiles/common/config/example"
-	git -C "$HOME/dotfiles" add common/config/example
-	git -C "$HOME/dotfiles" commit -qm ssh-fixture
-	local head
-	head=$(git -C "$HOME/dotfiles" rev-parse HEAD)
-	git -C "$HOME/dotfiles" remote add origin ssh://git@github.com/kattsushi/dotfiles-v2.git
-	sed -i "s/^pin\\tdotfiles-v2\\tgit\\tgithub.com\\/kattsushi\\/dotfiles-v2\\t-\\tsha256\\t-$/pin\\tdotfiles-v2\\tgit\\tgithub.com\\/kattsushi\\/dotfiles-v2\\t$head\\tsha256\\tfixture/" "$catalog/pins.tsv"
-	expect_refusal env BOOTSTRAP_CATALOG_DIR="$catalog" "$ROOT/bin/workstation-bootstrap" check --profile base
-	assert_file_contains "$FIXTURE/out" "PROVIDER_APPLY_UNIMPLEMENTED" || return 1
+	cp -R "$ROOT/dotfiles" "$HOME/dotfiles"
 	mkdir -p "$HOME/.config"
-	rm -f "$HOME/.config/example"
-	ln -s "$HOME/dotfiles/common/config/example" "$HOME/.config/example"
-	expect_refusal env BOOTSTRAP_CATALOG_DIR="$catalog" "$ROOT/bin/workstation-bootstrap" check --profile base
-	assert_file_contains "$FIXTURE/out" "PROVIDER_APPLY_UNIMPLEMENTED" || return 1
-	rm "$HOME/.config/example"
-	ln -s "$HOME/dotfiles/file-that-does-not-exist" "$HOME/.config/example"
-	expect_refusal env BOOTSTRAP_CATALOG_DIR="$catalog" "$ROOT/bin/workstation-bootstrap" check --profile base
+	ln -s "$HOME/dotfiles/file-that-does-not-exist" "$HOME/.config/starship.toml"
+	expect_refusal run_cli check --profile base
 	assert_file_contains "$FIXTURE/out" "TARGET_OWNER_CONFLICT" || return 1
-	rm "$HOME/.config/example"
-	local installer
+	rm "$HOME/.config/starship.toml"
+	local installer catalog="$FIXTURE/omarchy-catalog"
 	while IFS= read -r installer; do assert_file_contains "$ROOT/bootstrap/catalog/v1/legacy.tsv" "$installer" || return 1; done < <(find "$ROOT" -maxdepth 1 -type f -name 'install-*.sh' -printf '%f\n' | LC_ALL=C sort)
+	cp -R "$ROOT/bootstrap/catalog/v1" "$catalog"
 	sed -i '/omarchy-3.8.4/d' "$catalog/ownership.tsv"
 	expect_refusal env BOOTSTRAP_SENTINEL_SECRET=SENTINEL_SECRET_VALUE BOOTSTRAP_CATALOG_DIR="$catalog" BOOTSTRAP_TEST_OMARCHY_VERSION=3.8.3 BOOTSTRAP_TEST_HYPRLAND_VERSION=0.56 "$ROOT/bin/workstation-bootstrap" check --profile omarchy
 	assert_file_contains "$FIXTURE/out" "OMARCHY_VERSION_UNVERIFIED" || return 1
