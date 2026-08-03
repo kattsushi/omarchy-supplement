@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2086 # Profiles are intentionally expanded into positional arguments.
 plan_emit() {
 	local catalog=$1 os=$2 arch=$3
 	shift 3
 	local profiles action_count=0 blocked=0 row order id kind required provider desired status
-	local pin_revision pin_integrity engine_digest catalog_digest resolve_rc
+	local pin_kind pin_revision pin_integrity engine_digest catalog_digest resolve_rc
 	set +e
 	profiles=$(resolve_profiles "$catalog" "$os" "$arch" "$@")
 	resolve_rc=$?
@@ -39,10 +40,11 @@ plan_emit() {
 			local ref_var="BOOTSTRAP_APPROVED_REF_${id//-/_}"
 			[[ -n ${!ref_var:-} ]] || status=SECRET_REFERENCE_MISSING
 		fi
+		pin_kind=$(awk -F '\t' -v d="$desired" '$1=="pin" && $2==d {print $3; exit}' "$catalog/pins.tsv")
 		pin_revision=$(awk -F '\t' -v d="$desired" '$1=="pin" && $2==d {print $5; exit}' "$catalog/pins.tsv")
 		pin_integrity=$(awk -F '\t' -v d="$desired" '$1=="pin" && $2==d {print $7; exit}' "$catalog/pins.tsv")
 		if [[ $kind == dotfiles ]]; then
-			if [[ ! $pin_revision =~ ^[0-9a-f]{40}$ ]]; then
+			if [[ $pin_kind != embedded || ! $pin_revision =~ ^sha256:[0-9a-f]{64}$ ]]; then
 				status=PIN_MISSING
 			elif [[ -z $pin_integrity || $pin_integrity == - ]]; then
 				status=INTEGRITY_MISSING
