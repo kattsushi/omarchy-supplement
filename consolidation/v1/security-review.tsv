@@ -1,0 +1,25 @@
+schema	security-review-v1
+finding	.atl/skill-registry.md	LOCAL_STATE	SECURITY	BLOCKED	excluded-local-state
+finding	.env.example	CRED_PATH	SECURITY	BLOCKED	credential-shaped-reference
+finding	.gitignore	LOCAL_STATE	SECURITY	BLOCKED	excluded-local-state
+finding	.stow-local-ignore	LOCAL_STATE	SECURITY	BLOCKED	excluded-local-state
+finding	README.md	DARWIN_IDENTITY	SECURITY	REFERENCE	machine-specific-darwin-reference
+finding	README.md	SECRET_REFERENCE	SECURITY	REFERENCE	secret-reference-placeholder
+finding	install/stow.sh	EXECUTABLE_REVIEWED	SECURITY	INCLUDE	executable-reviewed
+finding	install/stow.sh	SECRET_REFERENCE	SECURITY	REFERENCE	secret-reference-placeholder
+finding	mcp/.config/mcp/mcp.json	MCP_CONTRACT	SECURITY	BLOCKED	external-secret-contract
+finding	mcp/.config/mcp/mcp.json	SECRET_REFERENCE	SECURITY	REFERENCE	secret-reference-placeholder
+finding	nvim/.config/nvim/.neoconf.json	LOCAL_STATE	SECURITY	BLOCKED	excluded-local-state
+finding	nvim/.config/nvim/lazy-lock.json	LOCAL_STATE	SECURITY	BLOCKED	excluded-local-state
+finding	polybar/.config/launch_polybar.sh	SYMLINK_APPROVED	SECURITY	INCLUDE	approved-relative-symlink
+finding	polybar/.config/polybar/config.ini	SECRET_REFERENCE	SECURITY	REFERENCE	secret-reference-placeholder
+finding	polybar/.config/polybar/launch_polybar.sh	EXECUTABLE_REVIEWED	SECURITY	INCLUDE	executable-reviewed
+finding	starship/.config/starship.toml	SECRET_REFERENCE	SECURITY	REFERENCE	secret-reference-placeholder
+finding	systems/darwin/flake.lock	DARWIN_IDENTITY	SECURITY	BLOCKED	machine-specific-darwin
+finding	systems/darwin/flake.lock	DARWIN_IDENTITY	SECURITY	REFERENCE	machine-specific-darwin-reference
+finding	systems/darwin/flake.nix	DARWIN_IDENTITY	SECURITY	BLOCKED	machine-specific-darwin
+finding	systems/darwin/flake.nix	DARWIN_IDENTITY	SECURITY	REFERENCE	machine-specific-darwin-reference
+finding	zshrc/.config/zsh/common.zsh	SECRET_REFERENCE	SECURITY	REFERENCE	secret-reference-placeholder
+finding	zshrc/.config/zsh/darwin.zsh	SECRET_REFERENCE	SECURITY	REFERENCE	secret-reference-placeholder
+finding	zshrc/.config/zsh/linux.zsh	SECRET_REFERENCE	SECURITY	REFERENCE	secret-reference-placeholder
+finding	zshrc/.config/zsh/local.example.zsh	LOCAL_STATE	SECURITY	BLOCKED	excluded-local-state

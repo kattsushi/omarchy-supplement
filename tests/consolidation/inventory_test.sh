@@ -32,16 +32,20 @@ grep -q $'^file\tmcp/config.json\t.*\texcluded/local\texclude\t' "$out" || fail 
 grep -q $'^file\tsystems/darwin/host.nix\t.*\tmacos\texclude\t' "$out" || fail darwin
 mapfile -t actual < <(awk -F $'\t' '$2 ~ /^backgrounds\// {print $2}' "$out")
 [ "${#actual[@]}" = 7 ] && [ "$(printf '%s\n' "${actual[@]}")" = "$(printf '%s\n' "${backgrounds[@]}")" ] || fail backgrounds
-for case_name in missing duplicate unknown unsafe unresolved; do
+for case_name in missing duplicate unknown unresolved; do
   cp "$out" "$tmp/$case_name.tsv"
   case "$case_name" in
-    missing) sed -i '2d' "$tmp/$case_name.tsv";; duplicate) sed -i '2p' "$tmp/$case_name.tsv";;
+    missing) sed -i '2d' "$tmp/$case_name.tsv";;
+    duplicate) sed -i '2p' "$tmp/$case_name.tsv";;
     unknown) sed -i '2s/\tfile\t/\tbogus\t/' "$tmp/$case_name.tsv";;
-    unsafe) sed -i '2s/\tclear$/\tblocked/' "$tmp/$case_name.tsv";;
     unresolved) sed -i '2s/\tinclude\t/\tpending\t/' "$tmp/$case_name.tsv";;
   esac
   ! "$script" --validate "$tmp/$case_name.tsv" >/dev/null 2>&1 || fail "$case_name accepted"
 done
+awk -F $'\t' 'BEGIN {OFS=FS} NR == 1 {print; next} !changed && $9 == "include" && $11 == "clear" {$9="exclude"; $11="blocked"; changed=1} {print}' "$out" > "$tmp/blocked-exclude.tsv"
+"$script" --validate "$tmp/blocked-exclude.tsv" || fail blocked-exclude
+awk -F $'\t' 'BEGIN {OFS=FS} NR == 1 {print; next} !changed && $9 == "include" && $11 == "clear" {$11="blocked"; changed=1} {print}' "$out" > "$tmp/blocked-include.tsv"
+! "$script" --validate "$tmp/blocked-include.tsv" >/dev/null 2>&1 || fail blocked-include
 cat > "$decisions" <<'EOF'
 import_method=pending
 backgrounds=include-separately

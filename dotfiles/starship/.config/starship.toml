@@ -1,0 +1,198 @@
+"$schema" = "https://starship.rs/config-schema.json"
+
+# Powerlevel10k-inspired Starship prompt.
+# Left prompt: identity, cwd, git, runtime context.
+# Right prompt: command status, duration, jobs, time.
+# Keep this file portable: no machine-specific paths or secrets.
+
+palette = "catppuccin_mocha"
+add_newline = true
+
+format = """
+[](surface0)\
+$custom\
+$username\
+$hostname\
+[](fg:surface0 bg:peach)\
+$directory\
+[](fg:peach bg:green)\
+$git_branch\
+$git_status\
+$nodejs\
+$python\
+$golang\
+$rust\
+$docker_context\
+[](fg:green)\
+$fill\
+$cmd_duration\
+$status\
+$jobs\
+$time\
+$line_break\
+$character"""
+
+right_format = """$battery"""
+
+[palettes.catppuccin_mocha]
+rosewater = "#f5e0dc"
+flamingo = "#f2cdcd"
+pink = "#f5c2e7"
+mauve = "#cba6f7"
+red = "#f38ba8"
+maroon = "#eba0ac"
+peach = "#fab387"
+yellow = "#f9e2af"
+green = "#a6e3a1"
+teal = "#94e2d5"
+sky = "#89dceb"
+sapphire = "#74c7ec"
+blue = "#89b4fa"
+lavender = "#b4befe"
+text = "#cdd6f4"
+subtext1 = "#bac2de"
+subtext0 = "#a6adc8"
+overlay2 = "#9399b2"
+overlay1 = "#7f849c"
+overlay0 = "#6c7086"
+surface2 = "#585b70"
+surface1 = "#45475a"
+surface0 = "#313244"
+base = "#1e1e2e"
+mantle = "#181825"
+crust = "#11111b"
+
+[fill]
+symbol = " "
+
+[os]
+disabled = true
+
+[custom.os_icon]
+command = "case \"$(uname -s)\" in Darwin) printf '' ;; Linux) if [ -r /etc/os-release ] && grep -qi 'omarchy' /etc/os-release; then printf ''; elif [ -r /etc/os-release ] && grep -Eqi '^ID=\"?arch\"?$' /etc/os-release; then printf ''; else printf '󰌽'; fi ;; *) printf '' ;; esac"
+when = true
+style = "bg:surface0 fg:text"
+format = "[ $output ]($style)"
+
+[username]
+show_always = true
+style_user = "bg:surface0 fg:text"
+style_root = "bg:surface0 fg:red bold"
+format = "[$user ]($style)"
+
+[hostname]
+ssh_only = true
+style = "bg:surface0 fg:subtext1"
+format = "[@$hostname ]($style)"
+
+[directory]
+style = "fg:mantle bg:peach bold"
+format = "[   $path ]($style)"
+truncation_length = 3
+truncation_symbol = "…/"
+home_symbol = "~"
+read_only = " 󰌾"
+read_only_style = "fg:red bg:peach"
+
+[directory.substitutions]
+"Documents" = "󰈙 "
+"Downloads" = " "
+"Music" = "󰝚 "
+"Pictures" = " "
+"Developer" = "󰲋 "
+"dotfiles" = " dotfiles"
+
+[git_branch]
+symbol = ""
+style = "fg:base bg:green bold"
+format = "[ $symbol $branch ]($style)"
+
+[git_status]
+style = "fg:base bg:green"
+format = "([$all_status$ahead_behind ]($style))"
+conflicted = "=${count} "
+ahead = "⇡${count} "
+behind = "⇣${count} "
+diverged = "⇕⇡${ahead_count}⇣${behind_count} "
+untracked = "?${count} "
+stashed = "\\$${count} "
+modified = "!${count} "
+staged = "+${count} "
+renamed = "»${count} "
+deleted = "✘${count} "
+
+[nodejs]
+symbol = ""
+style = "fg:base bg:green"
+format = "[ $symbol $version ]($style)"
+
+[python]
+symbol = ""
+style = "fg:base bg:green"
+format = "[ $symbol $version ]($style)"
+
+[golang]
+symbol = ""
+style = "fg:base bg:green"
+format = "[ $symbol $version ]($style)"
+
+[rust]
+symbol = ""
+style = "fg:base bg:green"
+format = "[ $symbol $version ]($style)"
+
+[docker_context]
+symbol = ""
+style = "fg:base bg:green"
+format = "[ $symbol $context ]($style)"
+only_with_files = true
+
+[cmd_duration]
+min_time = 1000
+style = "fg:yellow"
+format = "[  $duration ]($style)"
+
+[status]
+disabled = false
+style = "fg:red bold"
+format = "[ ✘ $status ]($style)"
+
+[jobs]
+symbol = ""
+style = "fg:blue"
+format = "[ $symbol $number ]($style)"
+
+[time]
+disabled = false
+time_format = "%H:%M"
+style = "fg:mauve"
+format = "[  $time ]($style)"
+
+[battery]
+disabled = false
+format = "[$symbol$percentage]($style) "
+full_symbol = "󰁹 "
+charging_symbol = "󰂄 "
+discharging_symbol = "󰂃 "
+unknown_symbol = "󰁽 "
+empty_symbol = "󰂎 "
+
+[[battery.display]]
+threshold = 20
+style = "fg:red bold"
+
+[[battery.display]]
+threshold = 50
+style = "fg:yellow"
+
+[line_break]
+disabled = false
+
+[character]
+disabled = false
+success_symbol = "[❯](bold fg:green)"
+error_symbol = "[❯](bold fg:red)"
+vimcmd_symbol = "[❮](bold fg:green)"
+vimcmd_replace_one_symbol = "[❮](bold fg:mauve)"
+vimcmd_replace_symbol = "[❮](bold fg:mauve)"
+vimcmd_visual_symbol = "[❮](bold fg:lavender)"
