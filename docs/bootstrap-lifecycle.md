@@ -7,10 +7,18 @@ and implies base. All package, download, shell, desktop, and dotfiles actions re
 visible but blocked: no apply, provider execution, Stow, download, installer, desktop,
 or Omarchy-managed-source operation exists in this work unit.
 
-The dotfiles contract remains `${HOME}/dotfiles` for `kattsushi/dotfiles-v2`; checks
-only inspect its Git metadata. They never clone, fetch, checkout, adopt, delete, move,
-or Stow. Existing targets, including exact-content matches, are not adopted. Paths
-under `.local/share/omarchy` are explicitly forbidden.
+The stable `dotfiles-v2` action now pins the verified embedded materialized source:
+48 imported leaves plus nine control leaves are fingerprinted before target inspection.
+`check` and `plan` classify `${HOME}/dotfiles` read-only: an exact complete materialized
+tree is ready, an absent target is eligible, and the approved legacy checkout is
+migration-ready. The legacy classifier still protects remote, pin, dirty, untracked,
+and divergent checkout states. Bootstrap never clones, fetches, checks out, adopts,
+deletes, moves, materializes, or invokes Stow. Explicit `workstation-dotfiles materialize`
+and Stow commands remain separate. Paths under `.local/share/omarchy` are forbidden.
+
+The embedded source and target classification evidence is Linux-only; macOS runtime
+evidence remains unverified. Production dotfiles apply is still unimplemented and emits
+`PROVIDER_APPLY_UNIMPLEMENTED` rather than mutating either target.
 
 `legacy.tsv` inventories legacy scripts as unsupported, blocked, or retired. The new
 CLI never dispatches them.
