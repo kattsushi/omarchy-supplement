@@ -1,0 +1,4 @@
+schema	profiles-v1
+shared	any	nvim,starship,tmux,zshrc
+arch/omarchy	linux	backgrounds,ghostty-linux,hyprland,hyprlock,hyprmocha,hyprpaper,mako,nvim,polybar,starship,tmux,waybar,zshrc
+macos	darwin	ghostty-darwin,nvim,starship,tmux,zshrc
