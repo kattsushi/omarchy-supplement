@@ -28,9 +28,10 @@ manifest_valid() {
 }
 
 controls_valid() {
-  local controls=$1 expected
-  expected=$'schema\tcontrol-files-v1\nfile\t.workstation/bin/workstation-dotfiles\nfile\t.workstation/control-files.tsv\nfile\t.workstation/lib/common.sh\nfile\t.workstation/lib/source.sh\nfile\t.workstation/profiles.tsv\nfile\t.workstation/source-files.tsv'
+  local controls=$1 root=$2 expected
+  expected=$'schema\tcontrol-files-v1\nfile\t.workstation/bin/workstation-dotfiles\nfile\t.workstation/control-files.tsv\nfile\t.workstation/lib/common.sh\nfile\t.workstation/lib/materialize.sh\nfile\t.workstation/lib/source.sh\nfile\t.workstation/lib/stow.sh\nfile\t.workstation/profiles.tsv\nfile\t.workstation/source-files.tsv\nfile\tnvim/.stow-local-ignore'
   printf '%s\n' "$expected" | cmp -s "$controls" - 2>/dev/null || refuse CONTROL
+  [ -f "$root/nvim/.stow-local-ignore" ] && [ ! -L "$root/nvim/.stow-local-ignore" ] && [ "$(stat -c %a "$root/nvim/.stow-local-ignore" 2>/dev/null)" = 644 ] && [ ! -s "$root/nvim/.stow-local-ignore" ] || refuse CONTROL
 }
 
 profiles_valid() {
@@ -58,7 +59,7 @@ verify_source() {
   profiles=$root/.workstation/profiles.tsv
   work=$(mktemp -d "${TMPDIR:-/tmp}/workstation-source.XXXXXX" 2>/dev/null) || refuse SOURCE
   trap 'rm -rf -- "$work"' RETURN
-  manifest_valid "$manifest"; controls_valid "$controls"; profiles_valid "$profiles" "$root"
+  manifest_valid "$manifest"; controls_valid "$controls" "$root"; profiles_valid "$profiles" "$root"
   find "$root" -mindepth 1 -name .git -type d -print -quit 2>/dev/null | grep -q . && refuse NESTED_GIT
   find "$root" -mindepth 1 ! -type f ! -type l ! -type d -print > "$work/special" 2>/dev/null || refuse SOURCE_SET
   [ ! -s "$work/special" ] || refuse SOURCE_SET
