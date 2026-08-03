@@ -90,11 +90,11 @@ fp_before=$("$work/dotfiles/.workstation/bin/workstation-dotfiles" materialize f
 printf '\n# sensitivity\n' >> "$work/dotfiles/.workstation/lib/materialize.sh"
 fp_after=$("$work/dotfiles/.workstation/bin/workstation-dotfiles" materialize fingerprint)
 [ "$fp_before" != "$fp_after" ] || fail fingerprint-sensitivity
-# Absent targets install the 48 manifest leaves plus seven control leaves exactly once.
+# Absent targets install the 48 manifest leaves plus eight control leaves exactly once.
 apply_target="$work/apply-target"
 apply_output=$("$cli" materialize apply --target "$apply_target" 2>&1) || fail "apply:$apply_output"
 [ "$apply_output" = $'status\tsuccess\tmaterialized' ] || fail "apply:$apply_output"
-[ "$(find "$apply_target" -type f -o -type l | wc -l)" = 55 ] || fail apply-leaves
+[ "$(find "$apply_target" -type f -o -type l | wc -l)" = 56 ] || fail apply-leaves
 before=$(find "$work" -mindepth 1 -maxdepth 1 -printf '%f\n' | LC_ALL=C sort)
 apply_output=$("$cli" materialize apply --target "$apply_target" 2>&1) || fail "noop:$apply_output"
 [ "$apply_output" = $'status\tnoop\tunchanged' ] || fail "noop:$apply_output"
