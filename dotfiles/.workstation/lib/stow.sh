@@ -15,11 +15,20 @@ stow_profile_packages() {
   [ "$profile" != arch/omarchy ] || [[ " ${STOW_PACKAGES[*]} " != *' ghostty-darwin '* ]]; [ "$profile" != macos ] || [[ " ${STOW_PACKAGES[*]} " != *' ghostty-linux '* ]]
 }
 stow_target() {
-  local root=$1 target=$2
-  target=$(stow_abs "$target") || return 1; stow_no_links_in_path "$target" || return 1
-  [ -d "$target" ] && [ ! -L "$target" ] && [ -O "$target" ] && [ -w "$target" ] || return 1
-  target=$(CDPATH='' cd -- "$target" 2>/dev/null && pwd -P) || return 1
-  case $target in "$root"|"$root"/*) return 1;; esac; case $root in "$target"/*) return 1;; esac
+  local root=$1 target=$2 physical_root raw_target=$2
+  [[ $raw_target = /* && $raw_target != *$'\t'* && $raw_target != *$'\n'* ]] || return 1
+  stow_no_links_in_path "$raw_target" || return 1
+  [ -d "$raw_target" ] && [ ! -L "$raw_target" ] && [ -O "$raw_target" ] && [ -w "$raw_target" ] || return 1
+  target=$(CDPATH='' cd -- "$raw_target" 2>/dev/null && pwd -P) || return 1
+  [ "$raw_target" = "$target" ] || return 1
+  physical_root=$(stow_abs "$root") || return 1; stow_no_links_in_path "$physical_root" || return 1
+  physical_root=$(CDPATH='' cd -- "$physical_root" 2>/dev/null && pwd -P) || return 1
+  case $target in "$physical_root"|"$physical_root"/*) return 1;; esac
+  case $physical_root in "$target"/*)
+    [ "$physical_root" = "$target/dotfiles" ] || return 1
+    STOW_SOURCE_UNDER_TARGET=1
+    ;;
+  esac
   printf '%s\n' "$target"
 }
 stow_owners() {
@@ -30,6 +39,7 @@ stow_owners() {
       relative=${leaf#"$root/$package/"}; stow_safe_rel "$relative" || return 1
       # GNU Stow always ignores exact package-local ignore metadata.
       case $relative in .stow-local-ignore) continue;; .local/share/omarchy|.local/share/omarchy/*) return 1;; esac
+      [ "${STOW_SOURCE_UNDER_TARGET:-0}" != 1 ] || case $relative in dotfiles|dotfiles/*) return 1;; esac
       [ -z "${STOW_OWNERS[$relative]:-}" ] || return 1; STOW_OWNERS[$relative]=$package; source="$root/$package/$relative"
       if [ -L "$source" ]; then safe_link "$(readlink "$source" 2>/dev/null)" "$package/${relative%/*}" || return 1; elif [ ! -f "$source" ]; then return 1; fi
     done < <(find -P "$root/$package" -mindepth 1 \( -type f -o -type l \) -print0 2>/dev/null)
@@ -62,14 +72,14 @@ stow_inputs() { (verify_source "$1") >/dev/null 2>&1 && stow_profile_packages "$
 stow_rows() { local profile=$1 package; printf 'profile\t%s\n' "$profile"; printf '%s\n' "${STOW_PACKAGES[@]}" | LC_ALL=C sort | while IFS= read -r package; do printf 'package\t%s\n' "$package"; done; }
 stow_fingerprint() { local out pattern=$'^fingerprint\tsha256\t([0-9a-f]{64})$'; out=$( (materialize_fingerprint "$1") 2>/dev/null) || return 1; [[ $out =~ $pattern ]] || return 1; printf '%s\n' "${BASH_REMATCH[1]}"; }
 stow_args() {
-  local root=$1 profile='' platform='' target=''; STOW_ARGUMENT_REASON=ARGUMENT
+  local root=$1 profile='' platform='' target=''; STOW_ARGUMENT_REASON=ARGUMENT STOW_SOURCE_UNDER_TARGET=0
   shift; while [ "$#" -gt 0 ]; do case $1 in --profile) profile=${2:-}; shift 2;; --platform) platform=${2:-}; shift 2;; --target) target=${2:-}; shift 2;; *) return 1;; esac; done
   [ -n "$profile" ] && [ -n "$platform" ] && [ -n "$target" ] || return 1; case $platform in linux|darwin) ;; *) STOW_ARGUMENT_REASON=PLATFORM; return 1;; esac
-  STOW_RAW_TARGET=$target; STOW_ARGUMENT_REASON=TARGET; STOW_PROFILE=$profile STOW_PLATFORM=$platform STOW_TARGET=$(stow_target "$root" "$target") || return 1
+  STOW_ARGUMENT_REASON=TARGET; STOW_PROFILE=$profile STOW_PLATFORM=$platform STOW_TARGET=$(stow_target "$root" "$target") || return 1
 }
 stow_check() {
   local root=$1; shift
-  stow_args "$root" "$@" || { if [ "$STOW_ARGUMENT_REASON" = TARGET ] && stow_abs "$STOW_RAW_TARGET" >/dev/null 2>&1 && ! stow_no_links_in_path "$(stow_abs "$STOW_RAW_TARGET")"; then stow_refuse SYMLINK_TARGET; else stow_refuse "$STOW_ARGUMENT_REASON"; fi; return $?; }
+  stow_args "$root" "$@" || { stow_refuse "$STOW_ARGUMENT_REASON"; return $?; }
   (verify_source "$root") >/dev/null 2>&1 || { stow_refuse SOURCE; return $?; }
   stow_profile_packages "$STOW_PROFILE" "$STOW_PLATFORM" "$root" || { stow_refuse PROFILE; return $?; }
   stow_owners "$root" || { stow_refuse SOURCE; return $?; }; fp=$(stow_fingerprint "$root") || { stow_refuse SOURCE; return $?; }
