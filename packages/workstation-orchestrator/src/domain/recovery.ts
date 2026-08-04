@@ -1,28 +1,25 @@
-import { Match, Schema } from "effect";
-import { BackupStateSchema, SafeNextActionSchema, type BackupState, type SafeNextAction } from "./states";
+import * as Data from "effect/Data";
+import * as Match from "effect/Match";
+import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
+import { BackupState, SafeNextAction } from "./states.js";
 
-export const BackupVisibilitySchema = Schema.Struct({
+export const BackupVisibility = Schema.Struct({
   backupId: Schema.String,
-  state: BackupStateSchema,
+  state: BackupState,
   identityEvidenceIds: Schema.Array(Schema.String),
   integrityEvidenceIds: Schema.Array(Schema.String),
-  nextAction: SafeNextActionSchema,
+  nextAction: SafeNextAction,
 });
-export interface BackupVisibility {
-  readonly backupId: string;
-  readonly state: BackupState;
-  readonly identityEvidenceIds: readonly string[];
-  readonly integrityEvidenceIds: readonly string[];
-  readonly nextAction: SafeNextAction;
-}
+export type BackupVisibility = typeof BackupVisibility.Type;
 
-export const ManualRestoreInputSchema = Schema.Struct({
+export const ManualRestoreInput = Schema.Struct({
   identityVerified: Schema.Boolean,
   integrityVerified: Schema.Boolean,
   identityEvidenceIds: Schema.Array(Schema.String),
   integrityEvidenceIds: Schema.Array(Schema.String),
 });
-export type ManualRestoreInput = Schema.Schema.Type<typeof ManualRestoreInputSchema>;
+export type ManualRestoreInput = typeof ManualRestoreInput.Type;
 
 type RestorePolicy = Pick<BackupVisibility, "state" | "nextAction">;
 const verificationFailed: RestorePolicy = {
@@ -30,12 +27,16 @@ const verificationFailed: RestorePolicy = {
   nextAction: { kind: "reassess", reasonCode: "backup-verification-required" },
 };
 
-export function manualRestoreEligibility(input: ManualRestoreInput): BackupVisibility {
+export class ManualRestoreRefused extends Data.TaggedError("ManualRestoreRefused")<{
+  readonly backup: BackupVisibility;
+}> {}
+
+export function manualRestoreEligibility(input: ManualRestoreInput) {
   const policy = Match.value(input).pipe(
-    Match.when({ identityVerified: true, integrityVerified: true }, (): RestorePolicy => ({
+    Match.when({ identityVerified: true, integrityVerified: true }, () => ({
       state: "eligible-for-manual-restore",
       nextAction: { kind: "follow-manual-guidance", reasonCode: "manual-restore-only" },
-    })),
+    } satisfies RestorePolicy)),
     Match.orElse(() => verificationFailed),
   );
   return {
@@ -44,4 +45,10 @@ export function manualRestoreEligibility(input: ManualRestoreInput): BackupVisib
     identityEvidenceIds: [...input.identityEvidenceIds],
     integrityEvidenceIds: [...input.integrityEvidenceIds],
   };
+}
+
+export function validateManualRestore(backup: BackupVisibility) {
+  return backup.state === "eligible-for-manual-restore"
+    ? Result.succeed(backup)
+    : Result.fail(new ManualRestoreRefused({ backup }));
 }

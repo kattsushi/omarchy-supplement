@@ -1,25 +1,18 @@
-import { Schema } from "effect";
-import { ProgramAssessmentSchema, type ProgramAssessment } from "../../domain/assessment";
-import { CompatibilityDecisionSchema, type CompatibilityDecision } from "../../domain/compatibility";
-import { EvidenceRecordSchema, type EvidenceRecord } from "../../domain/evidence";
-import type { PackagePlan } from "../../domain/plans";
-import { SafeNextActionSchema, TypedBlockerSchema, type SafeNextAction, type TypedBlocker } from "../../domain/states";
+import * as Schema from "effect/Schema";
+import { ProgramAssessment } from "../../domain/assessment.js";
+import { CompatibilityDecision } from "../../domain/compatibility.js";
+import { EvidenceRecord } from "../../domain/evidence.js";
+import type { PackagePlan } from "../../domain/plans.js";
+import { SafeNextAction, TypedBlocker } from "../../domain/states.js";
 
-export const AssessmentResultSchema = Schema.Struct({
-  compatibility: CompatibilityDecisionSchema,
-  programs: Schema.Array(ProgramAssessmentSchema),
-  evidence: Schema.Array(EvidenceRecordSchema),
-  blockers: Schema.Array(TypedBlockerSchema),
-  nextActions: Schema.Array(SafeNextActionSchema),
+export const AssessmentResult = Schema.Struct({
+  compatibility: CompatibilityDecision,
+  programs: Schema.Array(ProgramAssessment),
+  evidence: Schema.Array(EvidenceRecord),
+  blockers: Schema.Array(TypedBlocker),
+  nextActions: Schema.Array(SafeNextAction),
 });
-
-export interface AssessmentResult {
-  readonly compatibility: CompatibilityDecision;
-  readonly programs: readonly ProgramAssessment[];
-  readonly evidence: readonly EvidenceRecord[];
-  readonly blockers: readonly TypedBlocker[];
-  readonly nextActions: readonly SafeNextAction[];
-}
+export type AssessmentResult = typeof AssessmentResult.Type;
 
 export type ReadOnlyAssessmentResult = AssessmentResult | {
   readonly kind: "blocked";

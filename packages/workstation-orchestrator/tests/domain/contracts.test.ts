@@ -1,23 +1,28 @@
-import { describe, expect, test } from "bun:test";
-import { Effect, Schema } from "effect";
+import { describe, expect, it, test } from "@effect/vitest";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
 
 import {
-  BoundPlanSchema,
-  PlanBindingInputSchema,
-  PlanBindingSchema,
+  BoundPlan,
+  PlanBinding,
+  PlanBindingDigestFailure,
+  PlanBindingInput,
+  PlanDigestService,
   canonicalPlanBindingJson,
   createPlanBinding,
   isPlanBindingCurrent,
-} from "../../src/domain/plans";
-import { assessProgram } from "../../src/domain/assessment";
-import { CompatibilityInputSchema, selectCompatibility } from "../../src/domain/compatibility";
-import { providerBlocker } from "../../src/domain/providers";
-import { manualRestoreEligibility } from "../../src/domain/recovery";
-import { PlatformSchema, ProgramIdSchema } from "../../src/domain/states";
-import { cannotUpgradeEvidence, nativeEvidenceFor } from "../../src/domain/evidence";
-import { domainFixtures } from "../fixtures/domain-fixtures";
+} from "../../src/domain/plans.js";
+import { assessProgram, validateProgramReadiness } from "../../src/domain/assessment.js";
+import { CompatibilityInput, selectCompatibility, validateCompatibility } from "../../src/domain/compatibility.js";
+import { providerBlocker } from "../../src/domain/providers.js";
+import { manualRestoreEligibility, validateManualRestore } from "../../src/domain/recovery.js";
+import { Platform, ProgramId } from "../../src/domain/states.js";
+import { cannotUpgradeEvidence, nativeEvidenceFor } from "../../src/domain/evidence.js";
+import { domainFixtures } from "../fixtures/domain-fixtures.js";
 
-const programId = (value: string) => Schema.decodeUnknownSync(ProgramIdSchema)(value);
+const programId = (value: string) => Schema.decodeUnknownSync(ProgramId)(value);
 
 const bindingInput = {
   operation: "package-acquisition" as const,
@@ -37,30 +42,44 @@ const bindingInput = {
 
 describe("pure workstation domain contracts", () => {
   test("decodes literal states and brands opaque program identifiers", () => {
-    expect(Schema.decodeUnknownSync(PlatformSchema)("linux")).toBe("linux");
-    expect(() => Schema.decodeUnknownSync(PlatformSchema)("windows")).toThrow();
-    expect(String(Schema.decodeUnknownSync(ProgramIdSchema)("program:neovim"))).toBe("program:neovim");
-    expect(Schema.decodeUnknownSync(CompatibilityInputSchema)({ platform: "linux", generation: "omarchy-4" })).toEqual({ platform: "linux", generation: "omarchy-4" });
+    expect(Schema.decodeUnknownSync(Platform)("linux")).toBe("linux");
+    expect(() => Schema.decodeUnknownSync(Platform)("windows")).toThrow();
+    expect(String(Schema.decodeUnknownSync(ProgramId)("program:neovim"))).toBe("program:neovim");
+    expect(Schema.decodeUnknownSync(CompatibilityInput)({ platform: "linux", generation: "omarchy-4" })).toEqual({ platform: "linux", generation: "omarchy-4" });
   });
 
-  test("canonicalizes equivalent bindings and changes digest for every bound fact", async () => {
-    const first = await Effect.runPromise(createPlanBinding(bindingInput));
-    const reordered = await Effect.runPromise(createPlanBinding({
+  it.effect("canonicalizes equivalent bindings and changes digest for every bound fact", () => Effect.gen(function*() {
+    const first = yield* createPlanBinding(bindingInput).pipe(Effect.provide(PlanDigestService.layer));
+    const reordered = yield* createPlanBinding({
       ...bindingInput,
       logicalRequestIds: [...bindingInput.logicalRequestIds].reverse(),
       mappingIds: [...bindingInput.mappingIds].reverse(),
       riskCodes: [...bindingInput.riskCodes].reverse(),
-    }));
+    }).pipe(Effect.provide(PlanDigestService.layer));
 
     expect(canonicalPlanBindingJson(first.binding)).toBe(canonicalPlanBindingJson(reordered.binding));
     expect(first.digest).toBe(reordered.digest);
     expect(String(first.digest)).toBe("3fb22a9fe1426f3fda6c43ab706e5e31e544a3c78923b5f10ccd4a6bf87f61a1");
-    expect(await Effect.runPromise(isPlanBindingCurrent(first, { ...bindingInput, fallbackOptIn: false }))).toBe(false);
-    expect(await Effect.runPromise(isPlanBindingCurrent(first, { ...bindingInput, providerRole: "primary" }))).toBe(false);
+    expect(yield* isPlanBindingCurrent(first, { ...bindingInput, fallbackOptIn: false }).pipe(Effect.provide(PlanDigestService.layer))).toBe(false);
+    expect(yield* isPlanBindingCurrent(first, { ...bindingInput, providerRole: "primary" }).pipe(Effect.provide(PlanDigestService.layer))).toBe(false);
+  }));
+
+  it.effect("fails through the typed digest provider error channel", () => {
+    const unavailableDigest = Layer.succeed(PlanDigestService, {
+      sha256: () => Effect.fail(new PlanBindingDigestFailure({ cause: "digest unavailable" })),
+    });
+
+    return createPlanBinding(bindingInput).pipe(
+      Effect.provide(unavailableDigest),
+      Effect.match({
+        onFailure: (failure) => expect(failure).toMatchObject({ _tag: "PlanBindingDigestFailure", cause: "digest unavailable" }),
+        onSuccess: () => expect.fail("expected digest failure"),
+      }),
+    );
   });
 
-  test("changes a binding for each execution-relevant fact", async () => {
-    const original = await Effect.runPromise(createPlanBinding(bindingInput));
+  it.effect("changes a binding for each execution-relevant fact", () => Effect.gen(function*() {
+    const original = yield* createPlanBinding(bindingInput).pipe(Effect.provide(PlanDigestService.layer));
     const changes = [
       { capabilityId: "homebrew-cask" },
       { platformObservationDigest: "platform-v2" },
@@ -68,16 +87,16 @@ describe("pure workstation domain contracts", () => {
       { verificationPolicyId: "acquisition-v2" },
       { packageStateDigests: ["package:zellij:present"] },
     ];
-    for (const change of changes) expect(await Effect.runPromise(isPlanBindingCurrent(original, { ...bindingInput, ...change }))).toBe(false);
-  });
+    for (const change of changes) expect(yield* isPlanBindingCurrent(original, { ...bindingInput, ...change }).pipe(Effect.provide(PlanDigestService.layer))).toBe(false);
+  }));
 
     test("decodes branded plan values at the domain boundary", () => {
-      const binding = Schema.decodeUnknownSync(PlanBindingSchema)({ ...bindingInput, schemaVersion: "PlanBindingV1" });
-      const plan = Schema.decodeUnknownSync(BoundPlanSchema)({ binding, digest: "a".repeat(64), planId: `plan:${"a".repeat(64)}` });
+      const binding = Schema.decodeUnknownSync(PlanBinding)({ ...bindingInput, schemaVersion: "PlanBindingV1" });
+      const plan = Schema.decodeUnknownSync(BoundPlan)({ binding, digest: "a".repeat(64), planId: `plan:${"a".repeat(64)}` });
 
-      expect(Schema.decodeUnknownSync(PlanBindingInputSchema)(bindingInput)).toEqual(bindingInput);
+      expect(Schema.decodeUnknownSync(PlanBindingInput)(bindingInput)).toEqual(bindingInput);
       expect(String(plan.digest)).toBe("a".repeat(64));
-      expect(() => Schema.decodeUnknownSync(PlanBindingSchema)({ ...bindingInput, schemaVersion: "PlanBindingV2" })).toThrow();
+      expect(() => Schema.decodeUnknownSync(PlanBinding)({ ...bindingInput, schemaVersion: "PlanBindingV2" })).toThrow();
     });
 
     test("requires an explicit package-ready state plus configuration and Stow readiness", () => {
@@ -102,7 +121,49 @@ describe("pure workstation domain contracts", () => {
     expect(readyProgram.ready).toBe(true);
   });
 
-  test("never derives configuration or Stow readiness from package presence", () => {
+    test("returns typed validation rejections for readiness, compatibility, and manual restore", () => {
+      const notReady = validateProgramReadiness(assessProgram({
+        programId: programId("program:neovim"),
+        packageState: "missing",
+        configurationState: "applied",
+        dotfileStowState: "applied",
+        evidence: [],
+      }));
+      const ready = validateProgramReadiness(assessProgram({
+        programId: programId("program:neovim"),
+        packageState: "verified",
+        configurationState: "applied",
+        dotfileStowState: "applied",
+        evidence: [],
+      }));
+      const unsupported = validateCompatibility({
+        state: "unsupported",
+        generation: "omarchy-4",
+        evidenceStrength: "structural",
+        reasonCode: "unsupported",
+      });
+      const eligibleRestore = validateManualRestore(manualRestoreEligibility({
+        identityVerified: true,
+        integrityVerified: true,
+        identityEvidenceIds: ["evidence:identity"],
+        integrityEvidenceIds: ["evidence:integrity"],
+      }));
+      const refusedRestore = validateManualRestore(manualRestoreEligibility({
+        identityVerified: true,
+        integrityVerified: false,
+        identityEvidenceIds: ["evidence:identity"],
+        integrityEvidenceIds: ["evidence:integrity"],
+      }));
+
+      expect(Result.isFailure(notReady) && notReady.failure._tag).toBe("ProgramNotReady");
+      expect(Result.isSuccess(ready)).toBe(true);
+      expect(Result.isFailure(unsupported) && unsupported.failure._tag).toBe("CompatibilityRejected");
+      expect(Result.isSuccess(validateCompatibility(selectCompatibility({ platform: "linux", generation: "omarchy-4" })))).toBe(true);
+      expect(Result.isFailure(refusedRestore) && refusedRestore.failure._tag).toBe("ManualRestoreRefused");
+      expect(Result.isSuccess(eligibleRestore)).toBe(true);
+    });
+
+    test("never derives configuration or Stow readiness from package presence", () => {
     const result = assessProgram({
       programId: programId("program:neovim"),
       packageState: "present",

@@ -1,11 +1,11 @@
-import { Schema } from "effect";
-import { EvidenceStrengthSchema } from "./states";
+import * as Schema from "effect/Schema";
+import { EvidenceStrength } from "./states.js";
 
-export const EvidenceRecordSchema = Schema.Struct({
+export const EvidenceRecord = Schema.Struct({
   evidenceId: Schema.String,
   subjectId: Schema.String,
   claim: Schema.String,
-  strength: EvidenceStrengthSchema,
+  strength: EvidenceStrength,
   sourceContract: Schema.String,
   sourceVersion: Schema.String,
   platformContext: Schema.String,
@@ -13,10 +13,8 @@ export const EvidenceRecordSchema = Schema.Struct({
   digest: Schema.optional(Schema.String),
   summaryCode: Schema.String,
 });
-export type EvidenceRecord = Schema.Schema.Type<typeof EvidenceRecordSchema>;
+export type EvidenceRecord = typeof EvidenceRecord.Type;
 
-type EvidenceStrength = EvidenceRecord["strength"];
-
-const rank: Record<EvidenceStrength, number> = { unverified: 0, simulated: 1, fixture: 1, structural: 2, "provider-reported": 2, native: 3 };
-export const cannotUpgradeEvidence = (observed: EvidenceStrength, requested: EvidenceStrength): boolean => rank[requested] > rank[observed];
-export const nativeEvidenceFor = (record: EvidenceRecord, platformContext: string): boolean => record.strength === "native" && record.platformContext === platformContext;
+const rank: Record<EvidenceRecord["strength"], number> = { unverified: 0, simulated: 1, fixture: 1, structural: 2, "provider-reported": 2, native: 3 };
+export const cannotUpgradeEvidence = (observed: EvidenceRecord["strength"], requested: EvidenceRecord["strength"]) => rank[requested] > rank[observed];
+export const nativeEvidenceFor = (record: EvidenceRecord, platformContext: string) => record.strength === "native" && record.platformContext === platformContext;

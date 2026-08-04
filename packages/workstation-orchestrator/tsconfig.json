@@ -1,11 +1,28 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "Preserve",
-    "moduleResolution": "bundler",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
     "strict": true,
+    "isolatedModules": true,
+    "noImplicitReturns": true,
+    "noUnusedLocals": true,
     "noEmit": true,
     "skipLibCheck": true,
+    "plugins": [
+      {
+        "name": "@effect/language-service",
+        "namespaceImportPackages": ["effect", "@effect/platform", "@effect/platform-node"],
+        "diagnosticSeverity": {
+          "anyUnknownInErrorContext": "error",
+          "duplicatePackage": "error",
+          "unnecessaryEffectGen": "warning",
+          "unnecessaryFailYieldableError": "warning",
+          "unnecessaryPipe": "warning",
+          "unnecessaryPipeChain": "warning"
+        }
+      }
+    ],
     "types": ["bun-types"]
   },
   "include": ["src/**/*.ts", "tests/**/*.ts"]

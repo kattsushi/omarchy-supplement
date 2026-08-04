@@ -1,4 +1,4 @@
-import type { DomainBlockerCode } from "../../src/domain/states";
+import type { DomainBlockerCode } from "../../src/domain/states.js";
 
 export interface DomainFixture {
   readonly name: "completed" | "refused" | "unsupported" | "ambiguous" | "stale" | "failed" | "missing-provider" | "unsafe-mapping" | "fallback-not-opted-in" | "unverified-evidence";

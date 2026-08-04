@@ -1,28 +1,22 @@
-import { Schema } from "effect";
-import { EvidenceRecordSchema, type EvidenceRecord } from "./evidence";
-import { DomainBlockerCodeSchema, ProviderIdSchema, TypedBlockerSchema, type DomainBlockerCode, type ProviderId, type SafeNextAction, type TypedBlocker } from "./states";
+import * as Schema from "effect/Schema";
+import { EvidenceRecord } from "./evidence.js";
+import { DomainBlockerCode, ProviderId, SafeNextAction, TypedBlocker } from "./states.js";
 
-export const ProviderCapabilitySchema = Schema.Union([
+export const ProviderCapability = Schema.Union([
   Schema.Struct({ kind: Schema.Literals(["omarchy-pkg-add", "homebrew-formula", "homebrew-cask"]), commandPolicyId: Schema.String }),
   Schema.Struct({ kind: Schema.Literal("omarchy-install-group"), commandPolicyId: Schema.String, variantId: Schema.String }),
   Schema.Struct({ kind: Schema.Literals(["unknown", "ambiguous"]), reasonCode: Schema.String }),
 ]);
-export type ProviderCapability = Schema.Schema.Type<typeof ProviderCapabilitySchema>;
+export type ProviderCapability = typeof ProviderCapability.Type;
 
-export const ProviderObservationSchema = Schema.Struct({
-  provider: ProviderIdSchema,
+export const ProviderObservation = Schema.Struct({
+  provider: ProviderId,
   availability: Schema.Literals(["present", "missing", "ambiguous"]),
   observedVersion: Schema.Union([Schema.String, Schema.Literal("unknown")]),
-  capabilities: Schema.Array(ProviderCapabilitySchema),
-  evidence: Schema.Array(EvidenceRecordSchema),
+  capabilities: Schema.Array(ProviderCapability),
+  evidence: Schema.Array(EvidenceRecord),
 });
-export interface ProviderObservation {
-  readonly provider: ProviderId;
-  readonly availability: "present" | "missing" | "ambiguous";
-  readonly observedVersion: string | "unknown";
-  readonly capabilities: readonly ProviderCapability[];
-  readonly evidence: readonly EvidenceRecord[];
-}
+export type ProviderObservation = typeof ProviderObservation.Type;
 
 type BlockerPolicy = Pick<TypedBlocker, "policyDecision"> & { readonly nextActionKind: "reassess" | "review-policy" };
 
@@ -49,10 +43,10 @@ const nextActions: Record<BlockerPolicy["nextActionKind"], (reasonCode: DomainBl
   "review-policy": (reasonCode) => ({ kind: "review-policy", reasonCode }),
 };
 
-export function providerBlocker(code: DomainBlockerCode, evidenceIds: readonly string[]): TypedBlocker {
+export function providerBlocker(code: DomainBlockerCode, evidenceIds: readonly string[]) {
   const policy = blockerPolicies[code];
-  return Schema.decodeUnknownSync(TypedBlockerSchema)({
-    code: Schema.decodeUnknownSync(DomainBlockerCodeSchema)(code),
+  return Schema.decodeUnknownSync(TypedBlocker)({
+    code: Schema.decodeUnknownSync(DomainBlockerCode)(code),
     evidenceIds: [...evidenceIds].sort(),
     policyDecision: policy.policyDecision,
     nextAction: nextActions[policy.nextActionKind](code),
