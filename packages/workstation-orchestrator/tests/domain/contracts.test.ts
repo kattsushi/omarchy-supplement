@@ -57,6 +57,28 @@ describe("pure workstation domain contracts", () => {
     for (const change of changes) expect(await isPlanBindingCurrent(original, { ...bindingInput, ...change })).toBe(false);
   });
 
+  test("requires an explicit package-ready state plus configuration and Stow readiness", () => {
+    const missingPackage = assessProgram({
+      programId: "program:neovim",
+      packageState: "missing",
+      configurationState: "applied",
+      dotfileStowState: "applied",
+      evidence: [],
+    });
+    const presentPackage = assessProgram({
+      ...missingPackage,
+      packageState: "present",
+    });
+    const readyProgram = assessProgram({
+      ...missingPackage,
+      packageState: "verified",
+    });
+
+    expect(missingPackage.ready).toBe(false);
+    expect(presentPackage.ready).toBe(true);
+    expect(readyProgram.ready).toBe(true);
+  });
+
   test("never derives configuration or Stow readiness from package presence", () => {
     const result = assessProgram({
       programId: "program:neovim",
@@ -116,10 +138,28 @@ describe("pure workstation domain contracts", () => {
     for (const code of requiredBlockers) expect(providerBlocker(code, ["evidence:policy"]).nextAction.kind).not.toBe("none");
   });
 
-  test("returns machine-readable blocker and manual-only recovery eligibility", () => {
-    const blocker = providerBlocker("package-mapping-unsafe", ["evidence:mapping"]);
-    expect(blocker.nextAction.kind).toBe("review-policy");
-    expect(manualRestoreEligibility({ identityVerified: true, integrityVerified: true }).state).toBe("eligible-for-manual-restore");
-    expect(manualRestoreEligibility({ identityVerified: true, integrityVerified: false }).state).toBe("verification-failed");
+  test("classifies unsupported provider blockers and preserves manual restore evidence", () => {
+    expect(providerBlocker("package-unsupported", ["evidence:policy"]).policyDecision).toBe("unsupported");
+    expect(providerBlocker("provider-version-unsupported", ["evidence:provider"]).policyDecision).toBe("unsupported");
+
+    const eligible = manualRestoreEligibility({
+      identityVerified: true,
+      integrityVerified: true,
+      identityEvidenceIds: ["evidence:identity"],
+      integrityEvidenceIds: ["evidence:integrity"],
+    });
+    const rejected = manualRestoreEligibility({
+      identityVerified: true,
+      integrityVerified: false,
+      identityEvidenceIds: ["evidence:identity"],
+      integrityEvidenceIds: ["evidence:integrity"],
+    });
+
+    expect(eligible.state).toBe("eligible-for-manual-restore");
+    expect(eligible.identityEvidenceIds).toEqual(["evidence:identity"]);
+    expect(eligible.integrityEvidenceIds).toEqual(["evidence:integrity"]);
+    expect(rejected.state).toBe("verification-failed");
+    expect(rejected.identityEvidenceIds).toEqual(["evidence:identity"]);
+    expect(rejected.integrityEvidenceIds).toEqual(["evidence:integrity"]);
   });
 });

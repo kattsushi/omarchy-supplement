@@ -1,8 +1,35 @@
 import type { EvidenceRecord } from "./evidence";
-import type { DomainBlockerCode, ProviderId, TypedBlocker } from "./states";
+import type { DomainBlockerCode, ProviderId, SafeNextAction, TypedBlocker } from "./states";
+
 export type ProviderCapability = { readonly kind: "omarchy-pkg-add" | "homebrew-formula" | "homebrew-cask"; readonly commandPolicyId: string } | { readonly kind: "omarchy-install-group"; readonly commandPolicyId: string; readonly variantId: string } | { readonly kind: "unknown" | "ambiguous"; readonly reasonCode: string };
 export interface ProviderObservation { readonly provider: ProviderId; readonly availability: "present" | "missing" | "ambiguous"; readonly observedVersion: string | "unknown"; readonly capabilities: readonly ProviderCapability[]; readonly evidence: readonly EvidenceRecord[]; }
+
+type BlockerPolicy = Pick<TypedBlocker, "policyDecision"> & { readonly nextActionKind: "reassess" | "review-policy" };
+
+const blockerPolicies = {
+  "provider-missing": { policyDecision: "refused", nextActionKind: "review-policy" },
+  "provider-version-unsupported": { policyDecision: "unsupported", nextActionKind: "review-policy" },
+  "provider-capability-missing": { policyDecision: "refused", nextActionKind: "review-policy" },
+  "provider-capability-ambiguous": { policyDecision: "ambiguous", nextActionKind: "review-policy" },
+  "package-mapping-missing": { policyDecision: "refused", nextActionKind: "review-policy" },
+  "package-mapping-unsafe": { policyDecision: "refused", nextActionKind: "review-policy" },
+  "package-unsupported": { policyDecision: "unsupported", nextActionKind: "review-policy" },
+  "fallback-not-opted-in": { policyDecision: "refused", nextActionKind: "review-policy" },
+  "confirmation-absent": { policyDecision: "refused", nextActionKind: "review-policy" },
+  "confirmation-declined": { policyDecision: "refused", nextActionKind: "review-policy" },
+  "plan-stale": { policyDecision: "stale", nextActionKind: "reassess" },
+  "provider-execution-failed": { policyDecision: "refused", nextActionKind: "review-policy" },
+  "acquisition-unverifiable": { policyDecision: "refused", nextActionKind: "review-policy" },
+  "platform-ambiguous": { policyDecision: "ambiguous", nextActionKind: "review-policy" },
+  "native-evidence-unverified": { policyDecision: "refused", nextActionKind: "review-policy" },
+} satisfies Record<DomainBlockerCode, BlockerPolicy>;
+
+const nextActions: Record<BlockerPolicy["nextActionKind"], (reasonCode: DomainBlockerCode) => SafeNextAction> = {
+  reassess: (reasonCode) => ({ kind: "reassess", reasonCode }),
+  "review-policy": (reasonCode) => ({ kind: "review-policy", reasonCode }),
+};
+
 export function providerBlocker(code: DomainBlockerCode, evidenceIds: readonly string[]): TypedBlocker {
-  const policyDecision = code.includes("ambiguous") ? "ambiguous" : code === "plan-stale" ? "stale" : "refused" as const;
-  return { code, evidenceIds: [...evidenceIds].sort(), policyDecision, nextAction: { kind: code === "plan-stale" ? "reassess" : "review-policy", reasonCode: code } };
+  const policy = blockerPolicies[code];
+  return { code, evidenceIds: [...evidenceIds].sort(), policyDecision: policy.policyDecision, nextAction: nextActions[policy.nextActionKind](code) };
 }
