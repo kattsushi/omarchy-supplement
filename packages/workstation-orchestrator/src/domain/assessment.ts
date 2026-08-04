@@ -1,7 +1,24 @@
+import { Schema } from "effect";
 import type { EvidenceRecord } from "./evidence";
-import type { ConfigurationState, DotfileStowState, PackageState } from "./states";
+import { ConfigurationStateSchema, DotfileStowStateSchema, PackageStateSchema, ProgramIdSchema, type ConfigurationState, type DotfileStowState, type PackageState, type ProgramId } from "./states";
 
-export interface ProgramAssessment { readonly programId: string; readonly packageState: PackageState; readonly configurationState: ConfigurationState; readonly dotfileStowState: DotfileStowState; readonly evidence: readonly EvidenceRecord[]; readonly ready: boolean; }
+export const ProgramAssessmentSchema = Schema.Struct({
+  programId: ProgramIdSchema,
+  packageState: PackageStateSchema,
+  configurationState: ConfigurationStateSchema,
+  dotfileStowState: DotfileStowStateSchema,
+  evidence: Schema.Array(Schema.Unknown),
+  ready: Schema.Boolean,
+});
+
+export interface ProgramAssessment {
+  readonly programId: ProgramId;
+  readonly packageState: PackageState;
+  readonly configurationState: ConfigurationState;
+  readonly dotfileStowState: DotfileStowState;
+  readonly evidence: readonly EvidenceRecord[];
+  readonly ready: boolean;
+}
 
 const packageReadiness: Record<PackageState, boolean> = {
   present: true, missing: false, planned: false, blocked: false, "provider-reported": true, verified: true, unverifiable: false,

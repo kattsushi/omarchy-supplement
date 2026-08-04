@@ -1,25 +1,43 @@
-import type { BackupState, SafeNextAction } from "./states";
+import { Match, Schema } from "effect";
+import { BackupStateSchema, SafeNextActionSchema, type BackupState, type SafeNextAction } from "./states";
 
-export interface BackupVisibility { readonly backupId: string; readonly state: BackupState; readonly identityEvidenceIds: readonly string[]; readonly integrityEvidenceIds: readonly string[]; readonly nextAction: SafeNextAction; }
-export interface ManualRestoreInput {
-  readonly identityVerified: boolean;
-  readonly integrityVerified: boolean;
+export const BackupVisibilitySchema = Schema.Struct({
+  backupId: Schema.String,
+  state: BackupStateSchema,
+  identityEvidenceIds: Schema.Array(Schema.String),
+  integrityEvidenceIds: Schema.Array(Schema.String),
+  nextAction: SafeNextActionSchema,
+});
+export interface BackupVisibility {
+  readonly backupId: string;
+  readonly state: BackupState;
   readonly identityEvidenceIds: readonly string[];
   readonly integrityEvidenceIds: readonly string[];
+  readonly nextAction: SafeNextAction;
 }
 
-type RestorePolicy = Pick<BackupVisibility, "state" | "nextAction">;
-type VerificationKey = `${boolean}:${boolean}`;
+export const ManualRestoreInputSchema = Schema.Struct({
+  identityVerified: Schema.Boolean,
+  integrityVerified: Schema.Boolean,
+  identityEvidenceIds: Schema.Array(Schema.String),
+  integrityEvidenceIds: Schema.Array(Schema.String),
+});
+export type ManualRestoreInput = Schema.Schema.Type<typeof ManualRestoreInputSchema>;
 
-const restorePolicies = {
-  "true:true": { state: "eligible-for-manual-restore", nextAction: { kind: "follow-manual-guidance", reasonCode: "manual-restore-only" } },
-  "true:false": { state: "verification-failed", nextAction: { kind: "reassess", reasonCode: "backup-verification-required" } },
-  "false:true": { state: "verification-failed", nextAction: { kind: "reassess", reasonCode: "backup-verification-required" } },
-  "false:false": { state: "verification-failed", nextAction: { kind: "reassess", reasonCode: "backup-verification-required" } },
-} satisfies Record<VerificationKey, RestorePolicy>;
+type RestorePolicy = Pick<BackupVisibility, "state" | "nextAction">;
+const verificationFailed: RestorePolicy = {
+  state: "verification-failed",
+  nextAction: { kind: "reassess", reasonCode: "backup-verification-required" },
+};
 
 export function manualRestoreEligibility(input: ManualRestoreInput): BackupVisibility {
-  const policy = restorePolicies[`${input.identityVerified}:${input.integrityVerified}`];
+  const policy = Match.value(input).pipe(
+    Match.when({ identityVerified: true, integrityVerified: true }, (): RestorePolicy => ({
+      state: "eligible-for-manual-restore",
+      nextAction: { kind: "follow-manual-guidance", reasonCode: "manual-restore-only" },
+    })),
+    Match.orElse(() => verificationFailed),
+  );
   return {
     backupId: "backup:unresolved",
     ...policy,
