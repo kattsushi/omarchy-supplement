@@ -2,6 +2,7 @@ import * as Context from "effect/Context";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Match from "effect/Match";
 import * as Schema from "effect/Schema";
 import { ProgramAssessment, ProgramNotReady, assessProgram, validateProgramReadiness } from "../../domain/assessment.js";
 import { CompatibilityDecision, selectCompatibility } from "../../domain/compatibility.js";
@@ -44,6 +45,27 @@ const refused = (code: PlanningRefused["code"], evidenceIds: readonly string[]):
   return { blockers: [blocker], nextActions: [blocker.nextAction] };
 };
 
+const compatibilityBlockers = {
+  supported: () => [],
+  ambiguous: (evidenceIds: readonly string[]) => [providerBlocker("platform-ambiguous", evidenceIds)],
+  unsupported: (evidenceIds: readonly string[]) => [providerBlocker("native-evidence-unverified", evidenceIds)],
+  unverified: (evidenceIds: readonly string[]) => [providerBlocker("native-evidence-unverified", evidenceIds)],
+} satisfies Record<CompatibilityDecision["state"], (evidenceIds: readonly string[]) => TypedBlocker[]>;
+
+const primaryProviders = {
+  macos: "homebrew",
+  linux: "omarchy",
+  unknown: "omarchy",
+} as const;
+
+type ProviderSelection = { readonly provider: "omarchy" | "homebrew"; readonly providerRole: "primary" | "fallback" };
+
+const mappingRefusal = (selection: ProviderSelection, mapping: { readonly safe: boolean; readonly alreadyPresent: boolean }) => Match.value({ selection, mapping }).pipe(
+  Match.when({ mapping: { safe: false } }, () => "package-mapping-unsafe" as const),
+  Match.when({ selection: { providerRole: "fallback" }, mapping: { alreadyPresent: false } }, () => "package-mapping-missing" as const),
+  Match.orElse(() => undefined),
+);
+
 export class AssessWorkstation extends Context.Service<
   AssessWorkstation,
   { readonly assess: (programIds: readonly (typeof ProgramId.Type)[]) => Effect.Effect<WorkstationAssessment, ObservationUnavailable | ProgramNotReady> }
@@ -62,9 +84,7 @@ export class AssessWorkstation extends Context.Service<
           return Effect.fromResult(validateProgramReadiness(assessment));
         });
         const backups = yield* backupStatus.visibility;
-        const blockers = compatibility.state === "ambiguous"
-          ? [providerBlocker("platform-ambiguous", facts.evidence.map((record) => record.evidenceId))]
-          : compatibility.state === "supported" ? [] : [providerBlocker("native-evidence-unverified", facts.evidence.map((record) => record.evidenceId))];
+        const blockers = compatibilityBlockers[compatibility.state](facts.evidence.map((record) => record.evidenceId));
         return { compatibility, programs, evidence: [...facts.evidence, ...statuses.flatMap((status) => status.evidence)], backups, blockers, nextActions: blockers.map((blocker) => blocker.nextAction) };
       }),
     };
@@ -81,24 +101,29 @@ export class PlanPackageAcquisition extends Context.Service<
     const mappings = yield* PackageMappingPort;
     return {
       plan: (request) => Effect.gen(function*() {
-        const facts = yield* platform.facts;
-        const primary = facts.platform === "macos" ? "homebrew" as const : "omarchy" as const;
-        const primaryObservation = yield* providers.discover(primary);
-        let provider: "omarchy" | "homebrew" = primary;
-        let providerRole: "primary" | "fallback" = "primary";
-        if (primaryObservation.availability !== "present") {
-          if (facts.platform !== "linux") return refused("provider-missing", primaryObservation.evidence.map((record) => record.evidenceId));
-          if (!request.fallbackOptIn) return refused("fallback-not-opted-in", primaryObservation.evidence.map((record) => record.evidenceId));
-          const fallback = yield* providers.discover("homebrew");
-          if (fallback.availability !== "present") return refused("provider-missing", fallback.evidence.map((record) => record.evidenceId));
-          provider = "homebrew";
-          providerRole = "fallback";
-        }
-        const mapping = yield* mappings.map(request.programId, provider);
-        if (!mapping.safe) return refused("package-mapping-unsafe", []);
-        if (providerRole === "fallback" && !mapping.alreadyPresent) return refused("package-mapping-missing", []);
-        const bound = yield* createPlanBinding({ ...request.binding, provider, providerRole, capabilityId: provider === "homebrew" ? "homebrew-formula" : "omarchy-pkg-add", mappingIds: [mapping.mappingId], platformObservationDigest: facts.observationDigest, fallbackOptIn: request.fallbackOptIn });
-        return { plan: { plan: bound, blockers: [], nextActions: [], acquisitionDoesNotVerifyConfiguration: true as const, acquisitionDoesNotVerifyDotfileStow: true as const }, blockers: [], nextActions: [] };
+          const facts = yield* platform.facts;
+          const primary = primaryProviders[facts.platform];
+          const primaryObservation = yield* providers.discover(primary);
+          const selection = yield* Match.value(primaryObservation.availability).pipe(
+            Match.when("present", () => Effect.succeed({ provider: primary, providerRole: "primary" as const })),
+            Match.orElse(() => Match.value({ platform: facts.platform, fallbackOptIn: request.fallbackOptIn }).pipe(
+              Match.when({ platform: "linux", fallbackOptIn: true }, () => Effect.gen(function*() {
+                const fallback = yield* providers.discover("homebrew");
+                return yield* Match.value(fallback.availability).pipe(
+                  Match.when("present", () => Effect.succeed({ provider: "homebrew" as const, providerRole: "fallback" as const })),
+                  Match.orElse(() => Effect.succeed(refused("provider-missing", fallback.evidence.map((record) => record.evidenceId)))),
+                );
+              })),
+              Match.when({ platform: "linux" }, () => Effect.succeed(refused("fallback-not-opted-in", primaryObservation.evidence.map((record) => record.evidenceId)))),
+              Match.orElse(() => Effect.succeed(refused("provider-missing", primaryObservation.evidence.map((record) => record.evidenceId)))),
+            )),
+          );
+          if ("blockers" in selection) return selection;
+          const mapping = yield* mappings.map(request.programId, selection.provider);
+          const refusal = mappingRefusal(selection, mapping);
+          if (refusal !== undefined) return refused(refusal, []);
+          const bound = yield* createPlanBinding({ ...request.binding, provider: selection.provider, providerRole: selection.providerRole, capabilityId: selection.provider === "homebrew" ? "homebrew-formula" : "omarchy-pkg-add", mappingIds: [mapping.mappingId], platformObservationDigest: facts.observationDigest, fallbackOptIn: request.fallbackOptIn });
+          return { plan: { plan: bound, blockers: [], nextActions: [], acquisitionDoesNotVerifyConfiguration: true as const, acquisitionDoesNotVerifyDotfileStow: true as const }, blockers: [], nextActions: [] };
       }),
     };
   }),

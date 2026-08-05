@@ -1,6 +1,7 @@
 import * as Context from "effect/Context";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { EvidenceRecord } from "../../domain/evidence.js";
 import { ProviderObservation } from "../../domain/providers.js";
@@ -53,8 +54,18 @@ export interface PackageMappingPortShape {
   readonly map: (programId: typeof ProgramId.Type, provider: ProviderId) => Effect.Effect<SafePackageMapping, ObservationUnavailable>;
 }
 
-export const PlatformFactsPort = Context.Service<PlatformFactsPortShape>("PlatformFactsPort");
-export const EvidenceStatusPort = Context.Service<EvidenceStatusPortShape>("EvidenceStatusPort");
-export const BackupStatusPort = Context.Service<BackupStatusPortShape>("BackupStatusPort");
-export const ProviderDiscoveryPort = Context.Service<ProviderDiscoveryPortShape>("ProviderDiscoveryPort");
-export const PackageMappingPort = Context.Service<PackageMappingPortShape>("PackageMappingPort");
+export class PlatformFactsPort extends Context.Service<PlatformFactsPort, PlatformFactsPortShape>()("PlatformFactsPort", { make: Effect.never }) {
+  static readonly layer = Layer.effect(this, this.make);
+}
+export class EvidenceStatusPort extends Context.Service<EvidenceStatusPort, EvidenceStatusPortShape>()("EvidenceStatusPort", { make: Effect.never }) {
+  static readonly layer = Layer.effect(this, this.make);
+}
+export class BackupStatusPort extends Context.Service<BackupStatusPort, BackupStatusPortShape>()("BackupStatusPort", { make: Effect.never }) {
+  static readonly layer = Layer.effect(this, this.make);
+}
+export class ProviderDiscoveryPort extends Context.Service<ProviderDiscoveryPort, ProviderDiscoveryPortShape>()("ProviderDiscoveryPort", { make: Effect.never }) {
+  static readonly layer = Layer.effect(this, this.make);
+}
+export class PackageMappingPort extends Context.Service<PackageMappingPort, PackageMappingPortShape>()("PackageMappingPort", { make: Effect.never }) {
+  static readonly layer = Layer.effect(this, this.make);
+}
