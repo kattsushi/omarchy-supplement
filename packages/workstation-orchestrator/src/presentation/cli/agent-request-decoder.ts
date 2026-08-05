@@ -7,7 +7,7 @@ export type DecodeFailure = "invalid-request";
 const decoder = new TextDecoder("utf-8", { fatal: true });
 const keysFor = {
   assess_workstation: ["programIds"], list_profiles: [], plan_package_install: ["programId", "fallbackOptIn"],
-  show_evidence: ["programId"], show_backup: [], restore_guidance: ["programId"],
+  show_evidence: ["programId"], show_backup: ["backupId"], restore_guidance: ["backupId"],
 } as const;
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
 const exactKeys = (value: Record<string, unknown>, keys: readonly string[]) => Object.keys(value).every((key) => keys.includes(key)) && keys.every((key) => key in value);

@@ -1,4 +1,4 @@
-import { decodePublicResult, projectPublicResultV2, type PublicResult, type PublicResultV1, type PublicResultV2 } from "../../application/contracts/public-result.js";
+import { decodePublicResult, sanitizePublicResultV2, type PublicResult, type PublicResultV1, type PublicResultV2 } from "../../application/contracts/public-result.js";
 
 export const maxResponseBytes = 1024 * 1024;
 const encoder = new TextEncoder();
@@ -22,7 +22,7 @@ const canonicalize = (value: unknown): string => {
 
 const stable = (result: PublicResult): PublicResult => result.version === "PublicResultV1" ? {
   ...result, blockers: [...result.blockers].sort((a, b) => a.code.localeCompare(b.code)), evidence: [...result.evidence].sort(), nextActions: [...result.nextActions].sort(),
-} : projectPublicResultV2(result);
+} : sanitizePublicResultV2(result);
 
 const safe = (result: PublicResult): PublicResult | undefined => {
   try { return decodePublicResult(result); } catch { return undefined; }

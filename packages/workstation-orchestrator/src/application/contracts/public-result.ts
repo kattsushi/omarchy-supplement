@@ -24,8 +24,8 @@ const AssessmentPayload = Schema.Struct({ kind: Schema.Literal("assessment"), pl
 const ProfilesPayload = Schema.Struct({ kind: Schema.Literal("profiles"), profiles: Schema.Array(OpaqueId).check(Schema.isMaxLength(64)), policyIds: Schema.Array(OpaqueId).check(Schema.isMaxLength(64)) });
 const PlanPayload = Schema.Struct({ kind: Schema.Literal("plan"), provider: Schema.Literals(["omarchy", "homebrew"]), providerRole: Schema.Literals(["primary", "fallback"]), policyId: OpaqueId, planId: OpaqueId, bindingDigest: OpaqueId, confirmationRequired: Schema.Literal(true), acquisitionDoesNotVerifyConfiguration: Schema.Literal(true), acquisitionDoesNotVerifyDotfileStow: Schema.Literal(true) });
 const EvidencePayload = Schema.Struct({ kind: Schema.Literal("evidence"), evidenceId: OpaqueId, strength: SafeText, summaryCode: SafeText });
-const BackupPayload = Schema.Struct({ kind: Schema.Literal("backup"), backupId: OpaqueId, eligibility: SafeText });
-const GuidancePayload = Schema.Struct({ kind: Schema.Literal("guidance"), backupId: OpaqueId, steps: Schema.Array(SafeText).check(Schema.isMaxLength(64)), stopConditions: Schema.Array(SafeText).check(Schema.isMaxLength(64)) });
+const BackupPayload = Schema.Struct({ kind: Schema.Literal("backup"), backupId: OpaqueId, targetId: OpaqueId, eligibility: SafeText, identityEvidenceIds: Schema.Array(OpaqueId).check(Schema.isMaxLength(64)), integrityEvidenceIds: Schema.Array(OpaqueId).check(Schema.isMaxLength(64)) });
+const GuidancePayload = Schema.Struct({ kind: Schema.Literal("guidance"), backupId: OpaqueId, targetId: OpaqueId, manualOnly: Schema.Literal(true), prerequisites: Schema.Array(SafeText).check(Schema.isMaxLength(64)), steps: Schema.Array(SafeText).check(Schema.isMaxLength(64)), checks: Schema.Array(SafeText).check(Schema.isMaxLength(64)), stopConditions: Schema.Array(SafeText).check(Schema.isMaxLength(64)) });
 
 export const PublicResultV2 = Schema.Struct({
   version: Schema.Literal("PublicResultV2"), operation: AgentOperation, status: PublicStatus, correlationId: CorrelationId,
@@ -42,6 +42,26 @@ export const decodePublicResult = (value: unknown): PublicResult => Schema.decod
 
 /** The sole public semantic projection used by JSON and Atom state. */
 export const projectPublicResultV2 = (value: PublicResultV2): PublicResultV2 => {
-  decodePublicResult(value);
-  return value;
+  return sanitizePublicResultV2(value);
+};
+
+const sensitivePublicValue = /(?:^\/|\/home\b|\/users\b|\.local\/share\/omarchy|secret|password|token|api[_-]?key|stack|stderr|stdout|argv|process\.env|hostname|username)/i;
+const containsSensitivePublicValue = (value: unknown): boolean => typeof value === "string"
+  ? sensitivePublicValue.test(value)
+  : Array.isArray(value)
+    ? value.some(containsSensitivePublicValue)
+    : value !== null && typeof value === "object"
+      ? Object.values(value).some(containsSensitivePublicValue)
+      : false;
+
+export const sanitizePublicResultV2 = (value: PublicResultV2): PublicResultV2 => {
+  try {
+    decodePublicResult(value);
+    if (!containsSensitivePublicValue(value)) return value;
+  } catch {}
+  return {
+    version: "PublicResultV2", operation: value.operation, status: "failed", correlationId: value.correlationId,
+    payload: { kind: "unavailable", operation: value.operation, reason: "source-unavailable" },
+    blockers: [{ code: "operation-failed" }], evidence: [], nextActions: [],
+  };
 };
