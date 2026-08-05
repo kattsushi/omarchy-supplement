@@ -8,7 +8,7 @@ export interface PresentationAdapter {
   readonly invoke: (request: AgentRequest, signal: AbortSignal) => Promise<PublicResult>;
 }
 
-export type NavigationTarget = "overview" | "programs" | "plans" | "blockers" | "evidence" | "backups";
+export type NavigationTarget = "overview" | "platform-policy" | "profiles" | "programs" | "plans" | "blockers" | "evidence" | "backups";
 
 export type PresentationInteraction = {
   readonly selectedId?: string;
