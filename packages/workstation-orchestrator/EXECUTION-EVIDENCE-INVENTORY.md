@@ -103,33 +103,46 @@ native-environment claim.
 
 | Reference | Strength | What it establishes | What it does not establish |
 |---|---|---|---|
+| [PR #38](https://github.com/kattsushi/omarchy-supplement/pull/38) and [candidate commit `9fb0fe191d67bda54663b00a8768120833ec9a6f`](https://github.com/kattsushi/omarchy-supplement/commit/9fb0fe191d67bda54663b00a8768120833ec9a6f) | delivery context | An empty versioned draft Omarchy command-policy registry and structural contract were delivered as a feature candidate | Merge, approval, production activation, a supported command, or native Omarchy evidence |
 | [Omarchy command type](https://github.com/kattsushi/omarchy-supplement/blob/e0543f330dda46680ecd18eb394ffbeb613200a9/packages/workstation-orchestrator/src/application/ports/package-execution.ts#L12-L16) | structural | Closed scaffolded argv shapes | A supported native command |
 | [Fixture generation parser](https://github.com/kattsushi/omarchy-supplement/blob/e0543f330dda46680ecd18eb394ffbeb613200a9/packages/workstation-orchestrator/src/infrastructure/platform/fixtures.ts#L20-L63) | fixture | Fixture-only generation classification | Native version or capability evidence |
 | [Fixture parser tests](https://github.com/kattsushi/omarchy-supplement/blob/e0543f330dda46680ecd18eb394ffbeb613200a9/packages/workstation-orchestrator/tests/infrastructure/fixture-parsers.test.ts#L7-L19) | fixture | Known/unknown fixture classification | Omarchy 3.x or 4.x execution support |
 | [Sandbox exact-argv test](https://github.com/kattsushi/omarchy-supplement/blob/e0543f330dda46680ecd18eb394ffbeb613200a9/packages/workstation-orchestrator/tests/integration/provider-execution-sandbox.test.ts#L73-L92) | fixture | Isolated fake executable receives exact fixture argv | A native Omarchy result |
 | [Omarchy policy requirement](https://github.com/kattsushi/omarchy-supplement/blob/e0543f330dda46680ecd18eb394ffbeb613200a9/packages/workstation-orchestrator/EXECUTION-GOVERNANCE.md#L58-L68) | policy draft | Matching evidence and 4.x unavailability rule | An approved command policy |
+| [Command-policy registry and resolver](https://github.com/kattsushi/omarchy-supplement/blob/9fb0fe191d67bda54663b00a8768120833ec9a6f/packages/workstation-orchestrator/src/domain/omarchy-command-policy.ts#L1-L166) | structural | Canonical registry integrity; a strict plain-JSON runtime domain; lifecycle, approval, self-review, provenance, native-evidence binding, exact scope, command grammar, cardinality, and ambiguity checks that fail closed; sparse, prototype-bearing, accessor-backed, cyclic, and other exotic inputs are rejected | Reviewer authenticity, an approved registry or entry, correctness of any native command, or production execution authority |
+| [Empty draft provider](https://github.com/kattsushi/omarchy-supplement/blob/9fb0fe191d67bda54663b00a8768120833ec9a6f/packages/workstation-orchestrator/src/infrastructure/providers/draft-omarchy-command-policy.ts#L3-L8) | structural | Version `0.1.0` is an integrity-valid `draft`, requires security and Omarchy native-capability approvals, has no approvals, and contains no command entries | Any supported capability, approved argv, native evidence, adapter, production wiring, review, sign-off, or approval |
+| [Command-policy tests](https://github.com/kattsushi/omarchy-supplement/blob/9fb0fe191d67bda54663b00a8768120833ec9a6f/packages/workstation-orchestrator/tests/domain/omarchy-command-policy.test.ts#L41-L175) | fixture | The structural protections above are tested; the draft resolves `registry-not-approved`, Omarchy 4.x has no matching policy, and the registry and resolver remain absent from production composition | Native Omarchy behavior, external review, reviewer authenticity, production activation, or governance approval |
 | [Production provider port](https://github.com/kattsushi/omarchy-supplement/blob/e0543f330dda46680ecd18eb394ffbeb613200a9/packages/workstation-orchestrator/src/composition/mutation.ts#L16-L26) | unavailable | Real Omarchy execution stays typed-unavailable | Production execution authority |
+| Ordinary candidate verification | structural | At candidate commit `9fb0fe191d67bda54663b00a8768120833ec9a6f`, the full package suite passed 15 files / 201 tests, the focused policy suite passed 68 tests, an independent adversarial suite passed 15 tests, and typecheck, diff-check, and import scan passed | An RDD receipt or review, governance approval, native execution evidence, external reviewer sign-off, or production readiness |
 
 ### Acceptance-Criteria Mapping
 
 | Criterion | Current state |
 |---|---|
-| Exact version/generation/platform/architecture match | Not met; native evidence is unavailable |
-| Exact reviewed argv per capability | Not met; structural and fixture shapes are not policy approval |
-| Binary provenance, support window, and read-only discovery | Not met |
-| Omarchy 4.x remains unavailable without matching evidence | Met as a blocking policy; activation remains unapproved |
+| Versioned policy registry and exact runtime domain | Partially met; an empty integrity-valid versioned draft and strict structural contract exist, but no command entries or supported capabilities exist |
+| Exact version/generation/platform/architecture match | Structurally enforced and tested; no approved entry or matching native evidence exists |
+| Exact reviewed argv per capability | Structurally enforced and tested; no command grammar or argv is approved for any capability |
+| Approval, provenance, native-evidence binding, lifecycle, and ambiguity rules | Structurally enforced and tested; required external review, immutable sign-off, reviewer-authenticity validation, and native evidence are absent |
+| Production composition and activation | Blocked; no trusted production context, adapter, or wiring exists, and production remains typed-unavailable |
+| Omarchy 4.x remains unavailable without matching evidence | Met as a fail-closed structural rule; no 4.x policy or native evidence exists and activation remains unapproved |
 
 ### Missing Evidence, Decisions, and Approvers
 
-- Evidence: native host/runner identity, architecture, exact Omarchy and binary
-  versions, capability-specific read-only discovery, exact native argv/result,
-  binary provenance, date, and reproducible evidence digest.
-- Decisions: supported generation/version ranges, exact capability-to-argv policy,
-  non-interactive behavior, prompt/network/privilege bounds, and support expiry.
-- Missing approvers: named Omarchy capability maintainer and named independent
-  security command-policy reviewer.
-- External reviewer roles: Omarchy release/capability reviewer and command-execution
-  security reviewer.
+- Policy content: no supported commands, capabilities, command entries, or approved
+  argv exist.
+- Evidence: no native Omarchy evidence exists for host/runner identity,
+  architecture, exact Omarchy and binary versions, capability-specific read-only
+  discovery, argv/result, binary provenance, observation date, or reproducible
+  evidence digest.
+- Production integration: a trusted production context, policy adapter, and wiring
+  are absent; production remains typed-unavailable.
+- Missing approvers and sign-offs: the external Independent Omarchy Native
+  Capability Reviewer and independent security command-policy reviewer, their
+  immutable sign-offs, and governance-owned reviewer-authenticity validation are
+  absent. Owner preparation acceptance and structural verification are not
+  approval.
+- Blocked work: Task 9A.1, Task 9B, and final whole-change `sdd-verify` remain
+  blocked.
 
 ### Stop Conditions
 
@@ -244,7 +257,9 @@ native-environment claim.
 The first table covers committed blob bytes at base revision
 `e0543f330dda46680ecd18eb394ffbeb613200a9`. The mapping-catalog table covers
 committed blob bytes at feature candidate revision
-`2884b54d34ba09f1ad2a3a26c33ff972025c33a9`. All values are lowercase SHA-256.
+`2884b54d34ba09f1ad2a3a26c33ff972025c33a9`. The Omarchy command-policy table
+covers committed blob bytes at candidate revision
+`9fb0fe191d67bda54663b00a8768120833ec9a6f`. All values are lowercase SHA-256.
 
 | Committed file | SHA-256 |
 |---|---|
@@ -265,6 +280,12 @@ committed blob bytes at feature candidate revision
 | `packages/workstation-orchestrator/src/infrastructure/mappings/catalog-mapping-port.ts` | `ca2ad9c5a7502c7b13719c753dad90407dccd8fd4535cb18eb37a57446fde808` |
 | `packages/workstation-orchestrator/src/infrastructure/mappings/draft-mapping-catalog.ts` | `ad5607bf45e2c2372fab1744babd51002f82cd91d09994d6cb58fe745a00c272` |
 | `packages/workstation-orchestrator/tests/domain/mapping-catalog.test.ts` | `c4cf90778f0130ad642da5174337baac2acbdc98365922cd9173a1b12f719ca8` |
+
+| Omarchy command-policy candidate file | SHA-256 |
+|---|---|
+| `packages/workstation-orchestrator/src/domain/omarchy-command-policy.ts` | `d232c51b9b1be598b0613eee13e2100f6341f251a381fddb3183428d788c97a8` |
+| `packages/workstation-orchestrator/src/infrastructure/providers/draft-omarchy-command-policy.ts` | `c6a2a55f62eb0fa89cf1b835eb87e3b6ad6b733116b495abc2411fb1cad595ea` |
+| `packages/workstation-orchestrator/tests/domain/omarchy-command-policy.test.ts` | `ad7c4c8a09e235948c2d43b6ec60595c0f40b2b6b2f18ca5f3f970343f166fa7` |
 
 ## Blocking State
 
