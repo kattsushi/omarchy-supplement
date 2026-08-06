@@ -67,14 +67,25 @@ describe("mapping catalog", () => {
     ["blank reviewer", { ...entry, approvals: [{ ...entry.approvals[0]!, approver: " " }, entry.approvals[1]!] }],
     ["invalid approval timestamp", { ...entry, approvals: [{ ...entry.approvals[0]!, decidedAt: "not-a-date" }, entry.approvals[1]!] }],
     ["empty approval timestamp", { ...entry, approvals: [{ ...entry.approvals[0]!, decidedAt: "" }, entry.approvals[1]!] }],
+    ["noncanonical approval timestamp", { ...entry, approvals: [{ ...entry.approvals[0]!, decidedAt: "2026-08-02T00:00:00Z" }, entry.approvals[1]!] }],
     ["blank sign-off reference", { ...entry, approvals: [{ ...entry.approvals[0]!, signoffRef: " " }, entry.approvals[1]!] }],
     ["mutable sign-off reference", { ...entry, approvals: [{ ...entry.approvals[0]!, signoffRef: "signoff:latest" }, entry.approvals[1]!] }],
     ["rejected decision", { ...entry, approvals: [{ ...entry.approvals[0]!, decision: "rejected" as const }, entry.approvals[1]!] }],
     ["one reviewer filling both roles", { ...entry, approvals: [entry.approvals[0]!, { ...entry.approvals[1]!, approver: entry.approvals[0]!.approver }] }],
     ["missing provenance", { ...entry, provenance: undefined }],
     ["fixture provenance", { ...entry, provenance: { ...provenance, fixture: true } }],
+    ["padded entry owner", { ...entry, owner: ` ${entry.owner} ` }],
+    ["padded preparer", { ...entry, preparer: ` ${entry.preparer!} ` }],
+    ["padded reviewer", { ...entry, approvals: [{ ...entry.approvals[0]!, approver: ` ${entry.approvals[0]!.approver} ` }, entry.approvals[1]!] }],
+    ["padded catalog owner alias", { ...entry, approvals: [{ ...entry.approvals[0]!, approver: " catalog-owner " }, entry.approvals[1]!] }],
+    ["padded entry owner alias", { ...entry, approvals: [{ ...entry.approvals[0]!, approver: ` ${entry.owner} ` }, entry.approvals[1]!] }],
+    ["padded preparer alias", { ...entry, approvals: [{ ...entry.approvals[0]!, approver: ` ${entry.preparer!} ` }, entry.approvals[1]!] }],
   ])("rejects %s", async (_name, candidate) => {
     expect((await resolveMappingCatalogEntry(await signed({}, [candidate]), scope, now)).available).toBe(false);
+  });
+
+  it("rejects a padded accountable catalog owner", async () => {
+    expect((await resolveMappingCatalogEntry(await signed({ owner: " catalog-owner " }), scope, now)).available).toBe(false);
   });
 
   it("detects payload tampering", async () => {
@@ -118,12 +129,25 @@ describe("mapping catalog", () => {
     const duplicate = { ...entry, id: "mapping:duplicate", mapping: { ...entry.mapping, mappingId: "mapping:duplicate" } };
     expect(await resolveMappingCatalogEntry(await signed({}, [entry, duplicate]), scope, now)).toEqual({ available: false, reason: "ambiguous" });
   });
+
+  it.each([
+    ["platform", { ...scope, platform: "windows" }], ["generation", { ...scope, omarchyGeneration: "omarchy-5" }],
+    ["provider", { ...scope, provider: "apt" }], ["provider role", { ...scope, providerRole: "secondary" }],
+  ])("rejects matching invalid closed %s values at runtime", async (_name, invalid) => {
+    const invalidScope = invalid as typeof scope;
+    expect((await resolveMappingCatalogEntry(await signed({}, [{ ...entry, scope: invalidScope }]), invalidScope, now)).available).toBe(false);
+  });
 });
 
 describe("catalog mapping adapter", () => {
   it("adapts one entry only with the injected exact environment context", async () => {
     const port = makeCatalogMappingPort(await signed(), () => mappingContext, () => now);
     await expect(Effect.runPromise(port.map(programId, "homebrew"))).resolves.toMatchObject({ mappingId: entry.mapping.mappingId });
+  });
+
+  it.each([["missing", {}], ["mismatched", { ...mappingContext, platform: "linux" }]])("rejects %s adapter context", async (_name, context) => {
+    const port = makeCatalogMappingPort(await signed(), () => context as typeof mappingContext, () => now);
+    await expect(Effect.runPromise(port.map(programId, "homebrew"))).rejects.toMatchObject({ _tag: "ObservationUnavailable", reasonCode: "scope-mismatch" });
   });
 
   it.effect("keeps draft mappings typed-unavailable so planning cannot produce a plan", () => Effect.gen(function*() {

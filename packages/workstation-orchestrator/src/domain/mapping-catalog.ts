@@ -1,5 +1,6 @@
+import * as Schema from "effect/Schema";
 import type { SafePackageMapping } from "../application/ports/workstation.js";
-import type { OmarchyGeneration, Platform, ProgramId, ProviderId, ProviderRole } from "./states.js";
+import { OmarchyGeneration, Platform, ProviderId, ProviderRole, type ProgramId } from "./states.js";
 
 export type MappingCatalogStatus = "draft" | "in-review" | "approved" | "rejected" | "deprecated" | "superseded";
 export type MappingApprovalRole = "security" | "provider-policy";
@@ -137,16 +138,20 @@ const validProvenance = (value?: MappingProvenance) => value !== undefined && !v
   && value.repository.length > 0 && sha256Pattern.test(value.commitSha) && sha256Pattern.test(value.artifactSha256);
 const validApprovals = (catalog: MappingCatalog, entry: MappingCatalogEntry) => {
   const approvals = requiredApprovalRoles.map((role) => entry.approvals.find((approval) => approval.role === role && approval.decision === "approved"));
-  return nonblank(catalog.owner) && nonblank(entry.owner)
-    && (entry.preparer === undefined || nonblank(entry.preparer)) && entry.approvals.length === requiredApprovalRoles.length
-    && approvals.every((approval) => approval !== undefined && nonblank(approval.approver)
-      && approval.approver !== entry.owner && approval.approver !== entry.preparer && approval.approver !== catalog.owner
+  return canonicalIdentity(catalog.owner) && canonicalIdentity(entry.owner)
+    && (entry.preparer === undefined || canonicalIdentity(entry.preparer)) && entry.approvals.length === requiredApprovalRoles.length
+    && approvals.every((approval) => approval !== undefined && canonicalIdentity(approval.approver)
+      && !sameIdentity(approval.approver, entry.owner) && !sameIdentity(approval.approver, entry.preparer) && !sameIdentity(approval.approver, catalog.owner)
       && immutableSignoffPattern.test(approval.signoffRef) && validIsoTimestamp(approval.decidedAt))
     && new Set(approvals.map((approval) => approval?.approver)).size === requiredApprovalRoles.length;
 };
 const nonblank = (value: unknown): value is string => typeof value === "string" && value.trim().length > 0;
+const canonicalIdentity = (value: unknown): value is string => nonblank(value) && value === value.trim();
+const sameIdentity = (left: string, right?: string) => right !== undefined && left.trim() === right.trim();
 const validIsoTimestamp = (value: unknown) => nonblank(value) && Number.isFinite(Date.parse(value)) && new Date(value).toISOString() === value;
-const validScope = (scope: MappingCatalogEntry["scope"]) => scopeKeys.every((key) => nonblank(scope[key]));
+const validScope = (scope: MappingCatalogEntry["scope"]) => scopeKeys.every((key) => nonblank(scope[key]))
+  && Schema.is(Platform)(scope.platform) && Schema.is(OmarchyGeneration)(scope.omarchyGeneration)
+  && Schema.is(ProviderId)(scope.provider) && Schema.is(ProviderRole)(scope.providerRole);
 const current = (window: MappingLifecycle, now: Date) => {
   const effective = Date.parse(window.effectiveFrom);
   const review = Date.parse(window.reviewBy);
