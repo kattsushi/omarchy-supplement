@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFile } from "node:fs/promises";
 import {
-  commandPolicyDigest, resolveOmarchyCommandPolicy, validateCommandPolicyIntegrity,
+  commandEvidenceContextDigest, commandPolicyDigest, resolveOmarchyCommandPolicy, validateCommandPolicyIntegrity,
   type CommandPolicyStatus, type CommandScope, type OmarchyCommandPolicyEntry, type OmarchyCommandPolicyRegistry,
 } from "../../src/domain/omarchy-command-policy.js";
 import { draftOmarchyCommandPolicy } from "../../src/infrastructure/providers/draft-omarchy-command-policy.js";
@@ -15,21 +15,24 @@ const approvals = [
   { role: "omarchy-native-capability" as const, reviewer: "reviewer:native-test", decision: "approved" as const, decidedAt: "2026-08-02T00:00:00.000Z", signoffRef: `sha256:${hash}` },
 ];
 const evidence = { source: "native" as const, fixture: true, repository: "https://example.test/fixture", commitSha: hash, artifactSha256: hash,
-  evidenceId: "evidence:fixture-test", context: "fixture-test-only", outputSha256: hash, observedAt: "2026-08-02T00:00:00.000Z", freshUntil: "2026-09-01T00:00:00.000Z" };
+  evidenceId: "evidence:fixture-test", context: "bind:fixture-test", outputSha256: hash, observedAt: "2026-08-02T00:00:00.000Z", freshUntil: "2026-09-01T00:00:00.000Z" };
 const entry: OmarchyCommandPolicyEntry = {
   id: "policy:fixture-test", version: "1.0.0", status: "approved", owner: "owner:fixture-test", preparer: "preparer:fixture-test", scope,
-  grammar: { executable: "fixture-bin", route: ["fixture-route"], positionals: [{ name: "target", cardinality: "required", canonicalization: "lowercase", pattern: "^[a-z]+$" }],
-    options: [{ token: "--fixture-flag", kind: "flag" }, { token: "--fixture-value", kind: "value", valuePattern: "^[a-z]+$" }] },
+  grammar: { executable: "fixture-bin", route: ["fixture-route"], positionals: [{ name: "target", cardinality: "required", canonicalization: "lowercase", pattern: "^(?:[a-z]+)$" }],
+    options: [{ token: "--fixture-flag", kind: "flag", cardinality: "required" }, { token: "--fixture-value", kind: "value", cardinality: "optional", valuePattern: "^(?:[a-z]+)$" }] },
   privilege: "user", prompt: "noninteractive", network: "forbidden", disclosure: "none", sideEffect: "mutating", confirmation: "required",
   rollbackRef: "rollback:fixture-test", reassessmentRef: "reassess:fixture-test", approvals, evidence: [evidence], lifecycle,
   supersedes: [], conflictsWith: [],
 };
 async function signed(overrides: Partial<OmarchyCommandPolicyRegistry> = {}, entries: readonly OmarchyCommandPolicyEntry[] = [entry]) {
+  const bound = await Promise.all(entries.map(async (candidate) => { const context = await commandEvidenceContextDigest(candidate); return {
+    ...candidate, evidence: candidate.evidence.map((item) => item.context === "bind:fixture-test" ? { ...item, context } : item),
+  }; }));
   const registry: OmarchyCommandPolicyRegistry = { schemaVersion: "OmarchyCommandPolicyRegistryV1", id: "policy:fixture-test-registry", version: "1.0.0", status: "approved",
-    owner: "owner:registry-test", preparer: "preparer:registry-test", requiredApprovals: ["security", "omarchy-native-capability"], approvals, lifecycle, entries, digest: "", ...overrides };
+    owner: "owner:registry-test", preparer: "preparer:registry-test", requiredApprovals: ["security", "omarchy-native-capability"], approvals, lifecycle, entries: bound, digest: "", ...overrides };
   return { ...registry, digest: await commandPolicyDigest(registry) };
 }
-const resolve = async (registry: OmarchyCommandPolicyRegistry, candidateScope = scope, argv: readonly string[] = ["fixture-bin", "fixture-route", "target"]) =>
+const resolve = async (registry: OmarchyCommandPolicyRegistry, candidateScope = scope, argv: readonly string[] = ["fixture-bin", "fixture-route", "target", "--fixture-flag"]) =>
   resolveOmarchyCommandPolicy(registry, candidateScope, argv, now);
 const reason = async (registry: OmarchyCommandPolicyRegistry, candidateScope = scope, argv?: readonly string[]) => {
   const result = await resolve(registry, candidateScope, argv); return result.available ? undefined : result.reason;
@@ -45,6 +48,22 @@ describe("draft Omarchy command policy", () => {
     for (const status of statuses) { expect((await resolve(await signed({ status }))).available).toBe(false); expect((await resolve(await signed({}, [{ ...entry, status }]))).available).toBe(false); }
   });
   it("detects tampering", async () => { const registry = await signed(); expect(await validateCommandPolicyIntegrity({ ...registry, owner: "tampered" })).toBe(false); });
+  it("resolves one fully valid approved policy without asserting external reviewer authenticity", async () => {
+    expect(await resolve(await signed({}, [{ ...entry, evidence: [{ ...evidence, fixture: false }] }]))).toMatchObject({ available: true, entry: { id: entry.id } });
+  });
+  it.each([
+    ["undefined entry", { entries: [undefined] }], ["null entries", { entries: null }],
+    ["null scope", { entries: [{ ...entry, scope: null }] }], ["malformed options", { entries: [{ ...entry, grammar: { ...entry.grammar, options: null } }] }],
+  ])("fails closed without throwing for malformed runtime %s", async (_name, change) => {
+    const malformed = { ...await signed(), ...change } as unknown as OmarchyCommandPolicyRegistry;
+    await expect(validateCommandPolicyIntegrity(malformed)).resolves.toBe(false);
+    await expect(resolve(malformed)).resolves.toMatchObject({ available: false, reason: "integrity-invalid" });
+  });
+  it("rejects a malformed nested shape even when its digest matches", async () => {
+    const malformed = { ...await signed(), entries: [{ ...entry, scope: null }], digest: "" } as unknown as OmarchyCommandPolicyRegistry;
+    const matching = { ...malformed, digest: await commandPolicyDigest(malformed) };
+    await expect(resolve(matching)).resolves.toMatchObject({ available: false, reason: "policy-invalid" });
+  });
   it.each([
     ["blank owner", { owner: " " }], ["padded identity", { id: " policy:fixture-test " }], ["malformed version", { version: "latest" }],
     ["padded preparer", { preparer: " preparer:fixture-test " }], ["owner self approval", { approvals: [{ ...approvals[0]!, reviewer: entry.owner }, approvals[1]!] }],
@@ -56,12 +75,17 @@ describe("draft Omarchy command policy", () => {
   it.each([
     ["missing evidence", []], ["fixture native evidence", [evidence]], ["fixture evidence", [{ ...evidence, source: "fixture" as const }]],
     ["structural evidence", [{ ...evidence, source: "structural" as const }]], ["stale native evidence", [{ ...evidence, fixture: false, freshUntil: "2026-08-09T00:00:00.000Z" }]],
+    ["future native evidence", [{ ...evidence, fixture: false, observedAt: "2026-08-11T00:00:00.000Z" }]],
+    ["pre-effective native evidence", [{ ...evidence, fixture: false, observedAt: "2026-07-31T00:00:00.000Z" }]],
+    ["freshness beyond review", [{ ...evidence, fixture: false, freshUntil: "2026-09-02T00:00:00.000Z" }]],
+    ["unbound native evidence", [{ ...evidence, fixture: false, context: hash.replace(/^a/, "b") }]],
   ])("rejects %s as native evidence", async (_name, candidate) => {
     expect(await resolve(await signed({}, [{ ...entry, evidence: candidate }]))).toEqual({ available: false, reason: "native-evidence-invalid" });
   });
   it.each([
     ["blank repository", { ...evidence, repository: " " }], ["padded identity", { ...evidence, evidenceId: " evidence:fixture-test " }],
     ["malformed hash", { ...evidence, outputSha256: "A".repeat(64) }], ["malformed timestamp", { ...evidence, observedAt: "bad" }],
+    ["non-boolean fixture marker", { ...evidence, fixture: "false" as unknown as boolean }],
   ])("rejects %s provenance", async (_name, candidate) => {
     expect(await resolve(await signed({}, [{ ...entry, evidence: [candidate] }]))).toEqual({ available: false, reason: "provenance-invalid" });
   });
@@ -70,6 +94,9 @@ describe("draft Omarchy command policy", () => {
     ["support expired", { ...lifecycle, supportedUntil: "2026-08-09T00:00:00.000Z" }],
   ])("rejects entry lifecycle %s", async (_name, candidate) => { expect(await reason(await signed({}, [{ ...entry, lifecycle: candidate }]))).toBe("outside-window"); });
   it("rejects registry lifecycle", async () => { expect(await reason(await signed({ lifecycle: { ...lifecycle, reviewBy: "2026-08-09T00:00:00.000Z" } }))).toBe("outside-window"); });
+  it("rejects inverted lifecycle ordering", async () => {
+    expect(await reason(await signed({}, [{ ...entry, lifecycle: { ...lifecycle, reviewBy: "2026-10-02T00:00:00.000Z" } }]))).toBe("outside-window");
+  });
   it.each([
     ["architecture", { ...scope, architecture: "arm64" }], ["version", { ...scope, observedOmarchyVersion: "3.2.2" }],
     ["capability", { ...scope, capabilityId: "capability:other-test" }], ["variant", { ...scope, variantId: "variant:other-test" }],
@@ -82,15 +109,29 @@ describe("draft Omarchy command policy", () => {
     ["status", { status: "pending" }], ["privilege", { privilege: "root" }], ["prompt", { prompt: "sometimes" }], ["side effect", { sideEffect: "unknown" }],
   ])("rejects invalid runtime %s", async (_name, change) => { expect(await reason(await signed({}, [{ ...entry, ...change } as OmarchyCommandPolicyEntry]))).toBe("policy-invalid"); });
   it.each([
-    ["missing", ["fixture-bin", "fixture-route"]], ["extra", ["fixture-bin", "fixture-route", "target", "extra"]], ["padded", ["fixture-bin", "fixture-route", " target"]],
-    ["undeclared option", ["fixture-bin", "fixture-route", "target", "--other"]], ["mismatch", ["fixture-bin", "wrong", "target"]],
+    ["missing positional", ["fixture-bin", "fixture-route", "--fixture-flag"]], ["missing required option", ["fixture-bin", "fixture-route", "target"]],
+    ["extra", ["fixture-bin", "fixture-route", "target", "extra", "--fixture-flag"]], ["padded", ["fixture-bin", "fixture-route", " target", "--fixture-flag"]],
+    ["undeclared option", ["fixture-bin", "fixture-route", "target", "--fixture-flag", "--other"]],
+    ["duplicate option", ["fixture-bin", "fixture-route", "target", "--fixture-flag", "--fixture-flag"]],
+    ["missing option value", ["fixture-bin", "fixture-route", "target", "--fixture-flag", "--fixture-value"]],
+    ["padded option value", ["fixture-bin", "fixture-route", "target", "--fixture-flag", "--fixture-value", " value"]],
+    ["mismatch", ["fixture-bin", "wrong", "target", "--fixture-flag"]],
   ])("rejects %s arguments", async (_name, argv) => { expect(await reason(await signed(), scope, argv)).toBe("argument-invalid"); });
+  it("rejects unanchored argument patterns as policy-invalid", async () => {
+    const grammar = { ...entry.grammar, positionals: [{ ...entry.grammar.positionals[0]!, pattern: "[a-z]+" }] };
+    expect(await reason(await signed({}, [{ ...entry, grammar }]))).toBe("policy-invalid");
+  });
   it("refuses ambiguous exact policies without choosing", async () => {
     expect(await resolve(await signed({}, [entry, { ...entry, id: "policy:fixture-test-duplicate" }]))).toEqual({ available: false, reason: "ambiguous" });
   });
   it("rejects superseded and conflicting exact policies", async () => {
     expect(await reason(await signed({}, [{ ...entry, supersededBy: "policy:fixture-test-next" }]))).toBe("entry-not-approved");
     expect(await reason(await signed({}, [entry, { ...entry, id: "policy:fixture-test-next", conflictsWith: [entry.id] }]))).toBe("ambiguous");
+  });
+  it("rejects duplicate stable IDs globally before scope filtering", async () => {
+    const duplicate = { ...entry, version: "2.0.0", scope: { ...scope, architecture: "arm64" } };
+    expect(await reason(await signed({}, [entry, duplicate]))).toBe("policy-invalid");
+    expect(await reason(await signed({}, [{ ...entry, id: " policy:other-test ", scope: duplicate.scope }]))).toBe("policy-invalid");
   });
   it("stays absent from production composition", async () => {
     const sources = await Promise.all(["read-only.ts", "mutation.ts"].map((file) => readFile(new URL(`../../src/composition/${file}`, import.meta.url), "utf8")));

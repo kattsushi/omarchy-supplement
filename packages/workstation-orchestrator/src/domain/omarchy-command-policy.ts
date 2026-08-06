@@ -1,5 +1,6 @@
 export type CommandPolicyStatus = "draft" | "in-review" | "approved" | "rejected" | "deprecated" | "superseded";
 export type CommandApprovalRole = "security" | "omarchy-native-capability";
+/** Reviewer identity authenticity is established outside this pure registry contract. */
 export interface CommandApproval { readonly role: CommandApprovalRole; readonly reviewer: string; readonly decision: "approved" | "rejected"; readonly decidedAt: string; readonly signoffRef: string }
 export interface CommandPolicyWindow { readonly effectiveFrom: string; readonly reviewBy: string; readonly supportedUntil: string }
 export interface CommandEvidence {
@@ -12,7 +13,7 @@ export interface CommandScope {
   readonly observedOmarchyVersion: string; readonly provider: "omarchy"; readonly capabilityId: string; readonly variantId: string; readonly binaryIdentity: string;
 }
 export interface PositionalArgument { readonly name: string; readonly cardinality: "required" | "optional"; readonly canonicalization: "exact" | "lowercase"; readonly pattern: string }
-export interface OptionArgument { readonly token: string; readonly kind: "flag" | "value"; readonly valuePattern?: string }
+export interface OptionArgument { readonly token: string; readonly kind: "flag" | "value"; readonly cardinality: "required" | "optional"; readonly valuePattern?: string }
 export interface CommandGrammar { readonly executable: string; readonly route: readonly string[]; readonly positionals: readonly PositionalArgument[]; readonly options: readonly OptionArgument[] }
 export interface OmarchyCommandPolicyEntry {
   readonly id: string; readonly version: string; readonly status: CommandPolicyStatus; readonly owner: string; readonly preparer: string;
@@ -41,25 +42,35 @@ const closed = <T extends string>(values: readonly T[], value: unknown): value i
 const canonical = (value: unknown): value is string => typeof value === "string" && value.length > 0 && value === value.trim();
 const timestamp = (value: unknown): value is string => canonical(value) && Number.isFinite(Date.parse(value)) && new Date(value).toISOString() === value;
 const same = (left: string, right: string) => left.trim() === right.trim();
-const current = (window: CommandPolicyWindow, now: Date) => timestamp(window.effectiveFrom) && timestamp(window.reviewBy) && timestamp(window.supportedUntil)
-  && Date.parse(window.effectiveFrom) <= now.getTime() && now.getTime() <= Date.parse(window.reviewBy) && now.getTime() <= Date.parse(window.supportedUntil);
+const validWindow = (window: CommandPolicyWindow) => timestamp(window.effectiveFrom) && timestamp(window.reviewBy) && timestamp(window.supportedUntil)
+  && Date.parse(window.effectiveFrom) <= Date.parse(window.reviewBy) && Date.parse(window.reviewBy) <= Date.parse(window.supportedUntil);
+const current = (window: CommandPolicyWindow, now: Date) => validWindow(window) && Date.parse(window.effectiveFrom) <= now.getTime()
+  && now.getTime() <= Date.parse(window.reviewBy) && now.getTime() <= Date.parse(window.supportedUntil);
 
 export function canonicalCommandPolicyPayload(registry: OmarchyCommandPolicyRegistry): string {
   const { digest: _digest, ...payload } = registry; return canonicalize(payload);
 }
 export async function commandPolicyDigest(registry: OmarchyCommandPolicyRegistry): Promise<string> {
-  const bytes = new TextEncoder().encode(canonicalCommandPolicyPayload(registry)); const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return digest(canonicalCommandPolicyPayload(registry));
+}
+export async function commandEvidenceContextDigest(entry: Pick<OmarchyCommandPolicyEntry, "scope" | "grammar">): Promise<string> {
+  return digest(canonicalize({ scope: entry.scope, grammar: entry.grammar }));
+}
+async function digest(payload: string): Promise<string> {
+  const bytes = new TextEncoder().encode(payload); const digest = await crypto.subtle.digest("SHA-256", bytes);
   return [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, "0")).join("");
 }
 export async function validateCommandPolicyIntegrity(registry: OmarchyCommandPolicyRegistry): Promise<boolean> {
-  return sha.test(registry.digest) && registry.digest === await commandPolicyDigest(registry);
+  try { return sha.test(registry.digest) && registry.digest === await commandPolicyDigest(registry); } catch { return false; }
 }
 export async function resolveOmarchyCommandPolicy(
   registry: OmarchyCommandPolicyRegistry, scope: CommandScope, argv: readonly string[], now: Date,
 ): Promise<CommandPolicyResolution> {
+  try {
   if (registry.status !== "approved") return unavailable("registry-not-approved");
   if (!await validateCommandPolicyIntegrity(registry)) return unavailable("integrity-invalid");
-  if (!validRegistry(registry)) return unavailable("policy-invalid");
+  if (!validRuntimeShape(registry) || !validRegistry(registry)) return unavailable("policy-invalid");
+  if (!registry.entries.every((entry) => canonical(entry.id)) || new Set(registry.entries.map((entry) => entry.id)).size !== registry.entries.length) return unavailable("policy-invalid");
   if (!validApprovals(registry.owner, registry.preparer, registry.requiredApprovals, registry.approvals)) return unavailable("approval-invalid");
   if (!current(registry.lifecycle, now)) return unavailable("outside-window");
   if (!validScope(scope)) return unavailable("scope-mismatch");
@@ -73,8 +84,10 @@ export async function resolveOmarchyCommandPolicy(
   if (!validArguments(entry.grammar, argv)) return unavailable("argument-invalid");
   if (!current(entry.lifecycle, now)) return unavailable("outside-window");
   if (!entry.evidence.every(validProvenance)) return unavailable("provenance-invalid");
-  if (!entry.evidence.some((evidence) => evidence.source === "native" && !evidence.fixture && timestamp(evidence.freshUntil) && now.getTime() <= Date.parse(evidence.freshUntil))) return unavailable("native-evidence-invalid");
+  const context = await commandEvidenceContextDigest(entry);
+  if (!entry.evidence.some((evidence) => validNativeEvidence(evidence, entry, context, now))) return unavailable("native-evidence-invalid");
   return { available: true, entry };
+  } catch { return unavailable("policy-invalid"); }
 }
 
 const unavailable = (reason: CommandPolicyUnavailableReason): CommandPolicyResolution => ({ available: false, reason });
@@ -96,15 +109,22 @@ const validApprovals = (owner: string, preparer: string, required: readonly Comm
     && signoff.test(approval.signoffRef) && !same(approval.reviewer, owner) && !same(approval.reviewer, preparer))
   && new Set(approvals.map((approval) => approval.reviewer)).size === approvals.length;
 const validProvenance = (evidence: CommandEvidence) => closed(["structural", "fixture", "native"] as const, evidence.source)
-  && canonical(evidence.repository) && sha.test(evidence.commitSha) && sha.test(evidence.artifactSha256) && canonical(evidence.evidenceId)
-  && canonical(evidence.context) && sha.test(evidence.outputSha256) && timestamp(evidence.observedAt) && timestamp(evidence.freshUntil)
+  && typeof evidence.fixture === "boolean" && canonical(evidence.repository) && sha.test(evidence.commitSha) && sha.test(evidence.artifactSha256) && canonical(evidence.evidenceId)
+  && sha.test(evidence.context) && sha.test(evidence.outputSha256) && timestamp(evidence.observedAt) && timestamp(evidence.freshUntil)
   && Date.parse(evidence.observedAt) <= Date.parse(evidence.freshUntil);
+const validNativeEvidence = (evidence: CommandEvidence, entry: OmarchyCommandPolicyEntry, context: string, now: Date) => evidence.source === "native"
+  && evidence.fixture === false && evidence.context === context && Date.parse(entry.lifecycle.effectiveFrom) <= Date.parse(evidence.observedAt)
+  && Date.parse(evidence.observedAt) <= now.getTime() && now.getTime() <= Date.parse(evidence.freshUntil)
+  && Date.parse(evidence.freshUntil) <= Date.parse(entry.lifecycle.reviewBy) && Date.parse(evidence.freshUntil) <= Date.parse(entry.lifecycle.supportedUntil);
 const validGrammar = (grammar: CommandGrammar) => canonical(grammar.executable) && grammar.route.every(canonical)
   && grammar.positionals.every((arg) => canonical(arg.name) && closed(["required", "optional"] as const, arg.cardinality)
     && closed(["exact", "lowercase"] as const, arg.canonicalization) && validPattern(arg.pattern))
   && grammar.options.every((option) => canonical(option.token) && option.token.startsWith("-") && closed(["flag", "value"] as const, option.kind)
-    && (option.kind === "flag" ? option.valuePattern === undefined : validPattern(option.valuePattern)));
-const validPattern = (pattern: unknown): pattern is string => { try { return canonical(pattern) && (new RegExp(pattern), true); } catch { return false; } };
+    && closed(["required", "optional"] as const, option.cardinality)
+    && (option.kind === "flag" ? option.valuePattern === undefined : validPattern(option.valuePattern)))
+  && new Set(grammar.positionals.map((argument) => argument.name)).size === grammar.positionals.length
+  && new Set(grammar.options.map((option) => option.token)).size === grammar.options.length;
+const validPattern = (pattern: unknown): pattern is string => { try { return canonical(pattern) && pattern.startsWith("^(?:") && pattern.endsWith(")$") && (new RegExp(pattern), true); } catch { return false; } };
 const validArguments = (grammar: CommandGrammar, argv: readonly string[]) => {
   if (!argv.every(canonical) || argv[0] !== grammar.executable || grammar.route.some((part, index) => argv[index + 1] !== part)) return false;
   const tail = argv.slice(1 + grammar.route.length); const positional: string[] = []; const seen = new Set<string>();
@@ -113,9 +133,17 @@ const validArguments = (grammar: CommandGrammar, argv: readonly string[]) => {
     if (option.kind === "value") { const value = tail[++index]; if (!canonical(value) || value.startsWith("-") || !new RegExp(option.valuePattern!).test(value)) return false; }
   }
   if (positional.length > grammar.positionals.length) return false;
+  if (grammar.options.some((option) => option.cardinality === "required" && !seen.has(option.token))) return false;
   return grammar.positionals.every((definition, index) => { const value = positional[index]; if (value === undefined) return definition.cardinality === "optional";
     return new RegExp(definition.pattern).test(value) && (definition.canonicalization === "exact" || value === value.toLowerCase()); });
 };
+const record = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
+const recordArray = (value: unknown) => Array.isArray(value) && value.every(record);
+const validRuntimeShape = (registry: unknown): registry is OmarchyCommandPolicyRegistry => record(registry) && record(registry.lifecycle)
+  && Array.isArray(registry.requiredApprovals) && recordArray(registry.approvals) && Array.isArray(registry.entries)
+  && registry.entries.every((entry) => record(entry) && record(entry.scope) && record(entry.grammar) && record(entry.lifecycle)
+    && Array.isArray(entry.grammar.route) && recordArray(entry.grammar.positionals) && recordArray(entry.grammar.options)
+    && recordArray(entry.approvals) && recordArray(entry.evidence) && Array.isArray(entry.supersedes) && Array.isArray(entry.conflictsWith));
 function canonicalize(value: unknown): string {
   if (value === null || typeof value === "boolean" || typeof value === "number" || typeof value === "string") return JSON.stringify(value);
   if (Array.isArray(value)) return `[${value.map(canonicalize).join(",")}]`; const record = value as Record<string, unknown>;
