@@ -126,7 +126,7 @@ const validGrammar = (grammar: CommandGrammar) => canonical(grammar.executable) 
   && new Set(grammar.options.map((option) => option.token)).size === grammar.options.length;
 const validPattern = (pattern: unknown): pattern is string => { try { return canonical(pattern) && pattern.startsWith("^(?:") && pattern.endsWith(")$") && (new RegExp(pattern), true); } catch { return false; } };
 const validArguments = (grammar: CommandGrammar, argv: readonly string[]) => {
-  if (!argv.every(canonical) || argv[0] !== grammar.executable || grammar.route.some((part, index) => argv[index + 1] !== part)) return false;
+  if (!denseArray(argv) || !argv.every(canonical) || argv[0] !== grammar.executable || grammar.route.some((part, index) => argv[index + 1] !== part)) return false;
   const tail = argv.slice(1 + grammar.route.length); const positional: string[] = []; const seen = new Set<string>();
   for (let index = 0; index < tail.length; index++) { const token = tail[index]!; if (!token.startsWith("-")) { positional.push(token); continue; }
     const option = grammar.options.find((candidate) => candidate.token === token); if (!option || seen.has(token)) return false; seen.add(token);
@@ -138,14 +138,16 @@ const validArguments = (grammar: CommandGrammar, argv: readonly string[]) => {
     return new RegExp(definition.pattern).test(value) && (definition.canonicalization === "exact" || value === value.toLowerCase()); });
 };
 const record = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
-const recordArray = (value: unknown) => Array.isArray(value) && value.every(record);
+const denseArray = (value: unknown): value is readonly unknown[] => { if (!Array.isArray(value)) return false;
+  const keys = Reflect.ownKeys(value).filter((key) => key !== "length"); return keys.length === value.length && keys.every((key, index) => key === String(index)); };
+const recordArray = (value: unknown) => denseArray(value) && value.every(record);
 const validRuntimeShape = (registry: unknown): registry is OmarchyCommandPolicyRegistry => record(registry) && record(registry.lifecycle)
-  && Array.isArray(registry.requiredApprovals) && recordArray(registry.approvals) && Array.isArray(registry.entries)
+  && denseArray(registry.requiredApprovals) && recordArray(registry.approvals) && recordArray(registry.entries)
   && registry.entries.every((entry) => record(entry) && record(entry.scope) && record(entry.grammar) && record(entry.lifecycle)
-    && Array.isArray(entry.grammar.route) && recordArray(entry.grammar.positionals) && recordArray(entry.grammar.options)
-    && recordArray(entry.approvals) && recordArray(entry.evidence) && Array.isArray(entry.supersedes) && Array.isArray(entry.conflictsWith));
+    && denseArray(entry.grammar.route) && recordArray(entry.grammar.positionals) && recordArray(entry.grammar.options)
+    && recordArray(entry.approvals) && recordArray(entry.evidence) && denseArray(entry.supersedes) && denseArray(entry.conflictsWith));
 function canonicalize(value: unknown): string {
   if (value === null || typeof value === "boolean" || typeof value === "number" || typeof value === "string") return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(canonicalize).join(",")}]`; const record = value as Record<string, unknown>;
+  if (Array.isArray(value)) { if (!denseArray(value)) throw new TypeError("non-dense array"); return `[${value.map(canonicalize).join(",")}]`; } const record = value as Record<string, unknown>;
   return `{${Object.keys(record).filter((key) => record[key] !== undefined).sort().map((key) => `${JSON.stringify(key)}:${canonicalize(record[key])}`).join(",")}}`;
 }

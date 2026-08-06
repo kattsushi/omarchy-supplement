@@ -64,6 +64,16 @@ describe("draft Omarchy command policy", () => {
     const matching = { ...malformed, digest: await commandPolicyDigest(malformed) };
     await expect(resolve(matching)).resolves.toMatchObject({ available: false, reason: "policy-invalid" });
   });
+  it("rejects sparse and extra-key security arrays without throwing", async () => {
+    const holes = <T>(length: number) => new Array<T>(length); const keyed = Object.assign(["fixture-route"], { extra: "unsupported" });
+    const candidates: readonly [string, unknown][] = [
+      ["entries", holes<OmarchyCommandPolicyEntry>(1)], ["route", [{ ...entry, grammar: { ...entry.grammar, route: holes<string>(1) } }]],
+      ["positionals", [{ ...entry, grammar: { ...entry.grammar, positionals: holes(1) } }]], ["options", [{ ...entry, grammar: { ...entry.grammar, options: holes(1) } }]],
+      ["approvals", [{ ...entry, approvals: holes(2) }]], ["extra route key", [{ ...entry, grammar: { ...entry.grammar, route: keyed } }]],
+    ];
+    for (const [_name, entries] of candidates) { const malformed = { ...await signed(), entries } as OmarchyCommandPolicyRegistry;
+      await expect(validateCommandPolicyIntegrity(malformed)).resolves.toBe(false); await expect(resolve(malformed)).resolves.toMatchObject({ available: false, reason: "integrity-invalid" }); }
+  });
   it.each([
     ["blank owner", { owner: " " }], ["padded identity", { id: " policy:fixture-test " }], ["malformed version", { version: "latest" }],
     ["padded preparer", { preparer: " preparer:fixture-test " }], ["owner self approval", { approvals: [{ ...approvals[0]!, reviewer: entry.owner }, approvals[1]!] }],
