@@ -8,8 +8,8 @@ import { draftAcquisitionVerification } from "../../src/infrastructure/verificat
 
 const now = new Date("2026-08-10T00:00:00.000Z"); const hash = "a".repeat(64);
 const approvals: readonly VerificationApproval[] = [
-  { role: "evidence-owner", reviewer: "reviewer:evidence", decision: "approved", decidedAt: "2026-08-02T00:00:00.000Z", subjectDigest: hash, signoffRef: `sha256:${hash}` },
-  { role: "independent-verification-reviewer", reviewer: "reviewer:independent", decision: "approved", decidedAt: "2026-08-02T00:00:00.000Z", subjectDigest: hash, signoffRef: `sha256:${hash}` },
+  { role: "evidence-owner", reviewer: "identity:evidence-owner", decision: "approved", decidedAt: "2026-08-02T00:00:00.000Z", subjectDigest: hash, signoffRef: `sha256:${hash}` },
+  { role: "independent-verification-reviewer", reviewer: "identity:independent-reviewer", decision: "approved", decidedAt: "2026-08-02T00:00:00.000Z", subjectDigest: hash, signoffRef: `sha256:${hash}` },
 ];
 const lifecycle = { effectiveFrom: "2026-08-01T00:00:00.000Z", reviewBy: "2026-09-01T00:00:00.000Z", supportedUntil: "2026-10-01T00:00:00.000Z" };
 const scope = { provider: "homebrew", capabilityId: "homebrew-formula", platform: "linux", architecture: "x86_64", providerVersion: "4.6.0", packageKind: "formula" } as const;
@@ -18,11 +18,11 @@ const binding = { planId: "plan:synthetic", requestId: "request:synthetic", plan
 const scopeDigest = await acquisitionVerificationApprovalSubjectDigest(scope);
 const observation = (phase: "pre" | "post", observer: string, observedAt: string) => ({ id: `observation:${phase}`, phase, observer,
   planId: binding.planId, requestId: binding.requestId, scopeDigest, verificationPolicyDigest: hash, observedAt, freshUntil: "2026-08-20T00:00:00.000Z",
-  source: "native" as const, fixture: false, provenanceRef: `provenance:${phase}`, artifactSha256: (phase === "pre" ? "b" : "c").repeat(64), outputSha256: (phase === "pre" ? "d" : "e").repeat(64), sizeBytes: 10,
+  source: "native" as const, fixture: false, provenanceRef: `provenance:${phase}`, provenanceDigest: (phase === "pre" ? "1" : "2").repeat(64), artifactSha256: (phase === "pre" ? "b" : "c").repeat(64), outputSha256: (phase === "pre" ? "d" : "e").repeat(64), sizeBytes: 10,
   packageState: phase === "pre" ? "absent" as const : "present" as const, packageId: "jq", version: phase === "pre" ? "absent" : "1.7.1", location: phase === "pre" ? "absent" : "/home/linuxbrew/.linuxbrew/bin/jq" });
 const entry = (change: Partial<AcquisitionVerificationEntry> = {}): AcquisitionVerificationEntry => ({
-  id: "verification:synthetic", version: "1.0.0", status: "approved", owner: "owner:synthetic", preparer: "preparer:synthetic", approvals, lifecycle,
-  supersedes: [], supersededBy: "", conflictsWith: [], scope, binding, observations: [observation("pre", "observer:pre", "2026-08-03T00:00:00.000Z"), observation("post", "observer:post", "2026-08-04T00:00:00.000Z")],
+  id: "verification:synthetic", version: "1.0.0", status: "approved", owner: "identity:entry-policy-owner", preparer: "identity:entry-preparer", approvals, lifecycle,
+  supersedes: [], supersededBy: "", conflictsWith: [], scope, binding, observations: [observation("pre", "identity:pre-observer", "2026-08-03T00:00:00.000Z"), observation("post", "identity:post-observer", "2026-08-04T00:00:00.000Z")],
   requestedPackageIds: ["jq"], observedPackageIds: ["jq"], expectedVersion: "1.7.1", observedVersion: "1.7.1", installationLocation: "/home/linuxbrew/.linuxbrew/bin/jq",
   sideEffects: ["package-installed"], outcome: "success", completeness: 1, completenessThreshold: 1, evidenceCeilingBytes: 100,
   timedOut: false, truncated: false, providerDisagreement: false, indeterminateWrites: false, ambiguous: false, reassessmentRequired: false,
@@ -33,7 +33,7 @@ async function signed(entries: readonly AcquisitionVerificationEntry[] = [entry(
   const bind = async (subject: unknown, candidates: readonly VerificationApproval[]) => { const subjectDigest = await acquisitionVerificationApprovalSubjectDigest(subject); return candidates.map((approval) => ({ ...approval, subjectDigest })); };
   const boundEntries = await Promise.all(entries.map(async (candidate) => ({ ...candidate, approvals: await bind(candidate, candidate.approvals) })));
   const registry: AcquisitionVerificationRegistry = { schemaVersion: "AcquisitionVerificationRegistryV1", id: "policy:verification-synthetic", version: "1.0.0",
-    status: "approved", owner: "owner:registry", preparer: "preparer:registry", requiredApprovals: ["evidence-owner", "independent-verification-reviewer"],
+    status: "approved", owner: "identity:registry-policy-owner", preparer: "identity:registry-preparer", requiredApprovals: ["evidence-owner", "independent-verification-reviewer"],
     approvals, lifecycle, entries: boundEntries, digest: "", ...change }; const approved = { ...registry, approvals: await bind(registry, registry.approvals) }; return { ...approved, digest: await acquisitionVerificationDigest(approved) };
 }
 const request: VerificationRequest = { scope, binding, expectedPackageIds: ["jq"], expectedVersion: "1.7.1", expectedLocation: "/home/linuxbrew/.linuxbrew/bin/jq" };
@@ -47,20 +47,31 @@ describe("acquisition verification policy", () => {
   });
 
   it("terminates structurally eligible synthetic data without authorizing success", async () => {
-    const structural = entry({ observations: entry().observations.map((item) => ({ ...item, source: "structural", fixture: true })) });
-    await expect(resolveAcquisitionVerification(await signed([structural]), request, now)).resolves.toMatchObject({ available: false, structurallyEligible: true, reason: "independent-verification-required", authenticity: "not-established", authority: "trusted-external-verifier-required" });
+    const structural = entry({ preparer: "", observations: entry().observations.map((item) => ({ ...item, source: "structural", fixture: true })) });
+    await expect(resolveAcquisitionVerification(await signed([structural], { preparer: "" }), request, now)).resolves.toMatchObject({ available: false, structurallyEligible: true, reason: "independent-verification-required", authenticity: "not-established", authority: "trusted-external-verifier-required" });
   });
 
   it.each(["draft", "in-review", "rejected", "deprecated", "superseded"] as const)("rejects %s registry lifecycle status", async (status) => expect(await reason(await signed([entry()], { status }))).toBe("registry-not-approved"));
   it.each(["draft", "in-review", "rejected", "deprecated", "superseded"] as const)("rejects %s entry lifecycle status", async (status) => expect(await reason(await signed([entry({ status })]))).toBe("entry-not-approved"));
 
   it.each([
-    ["self review", [{ ...approvals[0]!, reviewer: "owner:synthetic" }, approvals[1]!]],
+    ["self review", [{ ...approvals[0]!, reviewer: "identity:entry-policy-owner" }, approvals[1]!]],
     ["duplicate reviewer", [approvals[0]!, { ...approvals[1]!, reviewer: approvals[0]!.reviewer }]],
     ["rejection", [{ ...approvals[0]!, decision: "rejected" }, approvals[1]!]],
     ["bad role", [{ ...approvals[0]!, role: "security" }, approvals[1]!]],
     ["bad signoff", [{ ...approvals[0]!, signoffRef: "sha256:BAD" }, approvals[1]!]],
+    ["padded identity", [{ ...approvals[0]!, reviewer: " identity:evidence-owner" }, approvals[1]!]], ["role-prefixed alias", [{ ...approvals[0]!, reviewer: "reviewer:evidence-owner" }, approvals[1]!]],
   ])("rejects approval class %s", async (_name, candidate) => expect(await reason(await signed([entry({ approvals: candidate as VerificationApproval[] })]))).toBeDefined());
+
+  it.each([
+    ["owner/preparer", { preparer: "identity:entry-policy-owner" }, {}], ["preparer/evidence owner", { approvals: [{ ...approvals[0]!, reviewer: "identity:entry-preparer" }, approvals[1]!] }, {}],
+    ["policy owner/independent reviewer", { approvals: [approvals[0]!, { ...approvals[1]!, reviewer: "identity:entry-policy-owner" }] }, {}],
+    ["cross-level owner/evidence owner", { approvals: [{ ...approvals[0]!, reviewer: "identity:registry-policy-owner" }, approvals[1]!] }, {}],
+    ["cross-level preparer/independent reviewer", { approvals: [approvals[0]!, { ...approvals[1]!, reviewer: "identity:registry-preparer" }] }, {}],
+    ["registry owner/preparer", {}, { preparer: "identity:registry-policy-owner" }],
+  ])("rejects governance role reuse: %s", async (_name, entryChange, registryChange) => {
+    expect(await reason(await signed([entry(entryChange as Partial<AcquisitionVerificationEntry>)], registryChange as Partial<AcquisitionVerificationRegistry>))).not.toBe("independent-verification-required");
+  });
 
   it.each([
     ["future", { lifecycle: { ...lifecycle, effectiveFrom: "2026-08-11T00:00:00.000Z" } }],
@@ -75,7 +86,7 @@ describe("acquisition verification policy", () => {
     ["cross scope", { scopeDigest: "f".repeat(64) }],
     ["bad artifact", { artifactSha256: "A".repeat(64) }], ["bad output", { outputSha256: "bad" }], ["zero bytes", { sizeBytes: 0 }], ["oversize", { sizeBytes: 101 }],
   ])("rejects evidence class %s", async (_name, change) => {
-    const observations = [observation("pre", "observer:pre", "2026-08-03T00:00:00.000Z"), { ...observation("post", "observer:post", "2026-08-04T00:00:00.000Z"), ...change }];
+    const observations = [observation("pre", "identity:pre-observer", "2026-08-03T00:00:00.000Z"), { ...observation("post", "identity:post-observer", "2026-08-04T00:00:00.000Z"), ...change }];
     expect(await reason(await signed([entry({ observations: observations as AcquisitionVerificationEntry["observations"] })]))).toBeDefined();
   });
 
@@ -90,16 +101,17 @@ describe("acquisition verification policy", () => {
   ])("never promotes %s to success", async (_name, change) => expect(await reason(await signed([entry(change as Partial<AcquisitionVerificationEntry>)]))).toBe("non-success"));
 
   it("rejects false provider success without an independent post-observation", async () => {
-    expect(await reason(await signed([entry({ observations: [observation("pre", "observer:pre", "2026-08-03T00:00:00.000Z")] })]))).not.toBeUndefined();
+    expect(await reason(await signed([entry({ observations: [observation("pre", "identity:pre-observer", "2026-08-03T00:00:00.000Z")] })]))).not.toBeUndefined();
   });
 
   it.each([
-    ["observer reuses approver", { observer: "reviewer:evidence" }], ["observer reuses owner", { observer: "owner:synthetic" }],
-    ["provenance reuses preparer", { provenanceRef: "preparer:synthetic" }], ["provenance repeats", { provenanceRef: "provenance:pre" }],
+    ["observer repeats", { observer: "identity:pre-observer" }], ["observer reuses evidence owner", { observer: "identity:evidence-owner" }], ["observer reuses independent reviewer", { observer: "identity:independent-reviewer" }],
+    ["observer reuses policy owner", { observer: "identity:entry-policy-owner" }], ["observer reuses preparer", { observer: "identity:entry-preparer" }], ["evidence id repeats", { id: "observation:pre" }],
+    ["provenance reuses preparer", { provenanceRef: "identity:entry-preparer" }], ["provenance repeats", { provenanceRef: "provenance:pre" }], ["provenance digest repeats", { provenanceDigest: "1".repeat(64) }],
     ["artifact repeats", { artifactSha256: "b".repeat(64) }], ["output repeats", { outputSha256: "d".repeat(64) }],
     ["post absent", { packageState: "absent" }], ["package mismatch", { packageId: "git" }], ["version mismatch", { version: "2.0.0" }], ["location mismatch", { location: "/tmp/jq" }],
   ])("rejects contradictory pre/post evidence: %s", async (_name, change) => {
-    const observations = [observation("pre", "observer:pre", "2026-08-03T00:00:00.000Z"), { ...observation("post", "observer:post", "2026-08-04T00:00:00.000Z"), ...change }];
+    const observations = [observation("pre", "identity:pre-observer", "2026-08-03T00:00:00.000Z"), { ...observation("post", "identity:post-observer", "2026-08-04T00:00:00.000Z"), ...change }];
     expect(await reason(await signed([entry({ observations: observations as AcquisitionVerificationEntry["observations"] })]))).not.toBe("independent-verification-required");
   });
 

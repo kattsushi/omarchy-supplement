@@ -10,7 +10,7 @@ export interface VerificationBinding {
 export interface VerificationObservation {
   readonly id: string; readonly phase: "pre" | "post"; readonly observer: string; readonly planId: string; readonly requestId: string;
   readonly scopeDigest: string; readonly verificationPolicyDigest: string; readonly observedAt: string; readonly freshUntil: string; readonly source: "native" | "fixture" | "structural";
-  readonly fixture: boolean; readonly provenanceRef: string; readonly artifactSha256: string; readonly outputSha256: string; readonly sizeBytes: number;
+  readonly fixture: boolean; readonly provenanceRef: string; readonly provenanceDigest: string; readonly artifactSha256: string; readonly outputSha256: string; readonly sizeBytes: number;
   readonly packageState: "absent" | "present"; readonly packageId: string; readonly version: string; readonly location: string;
 }
 export interface AcquisitionVerificationEntry {
@@ -36,7 +36,7 @@ export type VerificationResolution = { readonly available: false; readonly struc
 
 const statuses = ["draft", "in-review", "approved", "rejected", "deprecated", "superseded"] as const;
 const roles = ["evidence-owner", "independent-verification-reviewer"] as const;
-const sha = /^[a-f0-9]{64}$/; const signoff = /^sha256:[a-f0-9]{64}$/; const semver = /^\d+\.\d+\.\d+$/; const id = /^[a-z][a-z0-9-]*:[a-z0-9._+-]+$/;
+const sha = /^[a-f0-9]{64}$/; const signoff = /^sha256:[a-f0-9]{64}$/; const semver = /^\d+\.\d+\.\d+$/; const id = /^[a-z][a-z0-9-]*:[a-z0-9._+-]+$/; const identity = /^identity:[a-z0-9._+-]+$/;
 const text = (value: unknown): value is string => typeof value === "string" && value.length > 0 && value === value.trim();
 const closed = <T extends string>(values: readonly T[], value: unknown): value is T => typeof value === "string" && values.includes(value as T);
 const time = (value: unknown): value is string => text(value) && Number.isFinite(Date.parse(value)) && new Date(value).toISOString() === value;
@@ -48,7 +48,7 @@ const validWindow = (value: VerificationWindow) => exact(value, ["effectiveFrom"
 const validApprovals = (owner: string, preparer: string, approvals: readonly VerificationApproval[], subjectDigest: string) => dense(approvals) && approvals.length === roles.length
   && roles.every((role) => approvals.some((approval) => approval.role === role && approval.decision === "approved"))
   && approvals.every((approval) => exact(approval, ["role", "reviewer", "decision", "decidedAt", "subjectDigest", "signoffRef"]) && closed(roles, approval.role)
-    && id.test(approval.reviewer) && approval.decision === "approved" && time(approval.decidedAt) && approval.subjectDigest === subjectDigest && signoff.test(approval.signoffRef)
+    && identity.test(approval.reviewer) && approval.decision === "approved" && time(approval.decidedAt) && approval.subjectDigest === subjectDigest && signoff.test(approval.signoffRef)
     && approval.reviewer !== owner && approval.reviewer !== preparer)
   && new Set(approvals.map((approval) => approval.reviewer)).size === approvals.length;
 const validScope = (value: VerificationScope) => exact(value, ["provider", "capabilityId", "platform", "architecture", "providerVersion", "packageKind"])
@@ -56,17 +56,17 @@ const validScope = (value: VerificationScope) => exact(value, ["provider", "capa
   && closed(["x86_64", "arm64"] as const, value.architecture) && semver.test(value.providerVersion) && closed(["package", "formula", "cask"] as const, value.packageKind);
 const bindingKeys = ["planId", "requestId", "planBindingDigest", "commandDigest", "providerPolicyDigest", "mappingCatalogDigest", "mappingEntryDigest", "verificationPolicyDigest"] as const;
 const validBinding = (value: VerificationBinding) => exact(value, bindingKeys) && id.test(value.planId) && id.test(value.requestId) && bindingKeys.slice(2).every((key) => sha.test(value[key]));
-const validObservation = (value: VerificationObservation, entry: AcquisitionVerificationEntry, scopeDigest: string, now: Date) => exact(value, ["id", "phase", "observer", "planId", "requestId", "scopeDigest", "verificationPolicyDigest", "observedAt", "freshUntil", "source", "fixture", "provenanceRef", "artifactSha256", "outputSha256", "sizeBytes", "packageState", "packageId", "version", "location"])
-  && id.test(value.id) && closed(["pre", "post"] as const, value.phase) && id.test(value.observer) && value.observer !== entry.owner && value.observer !== entry.preparer
+const validObservation = (value: VerificationObservation, entry: AcquisitionVerificationEntry, scopeDigest: string, now: Date) => exact(value, ["id", "phase", "observer", "planId", "requestId", "scopeDigest", "verificationPolicyDigest", "observedAt", "freshUntil", "source", "fixture", "provenanceRef", "provenanceDigest", "artifactSha256", "outputSha256", "sizeBytes", "packageState", "packageId", "version", "location"])
+  && id.test(value.id) && closed(["pre", "post"] as const, value.phase) && identity.test(value.observer) && value.observer !== entry.owner && value.observer !== entry.preparer
   && value.planId === entry.binding.planId && value.requestId === entry.binding.requestId && value.scopeDigest === scopeDigest && value.verificationPolicyDigest === entry.binding.verificationPolicyDigest
   && time(value.observedAt) && time(value.freshUntil) && Date.parse(value.observedAt) <= now.getTime() && now.getTime() <= Date.parse(value.freshUntil)
   && Date.parse(entry.lifecycle.effectiveFrom) <= Date.parse(value.observedAt) && Date.parse(value.freshUntil) <= Date.parse(entry.lifecycle.reviewBy) && Date.parse(value.freshUntil) <= Date.parse(entry.lifecycle.supportedUntil)
   && closed(["native", "fixture", "structural"] as const, value.source) && typeof value.fixture === "boolean" && value.fixture === (value.source !== "native")
-  && id.test(value.provenanceRef) && sha.test(value.artifactSha256) && sha.test(value.outputSha256) && Number.isSafeInteger(value.sizeBytes) && value.sizeBytes > 0
+  && id.test(value.provenanceRef) && sha.test(value.provenanceDigest) && sha.test(value.artifactSha256) && sha.test(value.outputSha256) && Number.isSafeInteger(value.sizeBytes) && value.sizeBytes > 0
   && closed(["absent", "present"] as const, value.packageState) && text(value.packageId) && text(value.version) && text(value.location);
 const entryKeys = ["id", "version", "status", "owner", "preparer", "approvals", "lifecycle", "supersedes", "supersededBy", "conflictsWith", "scope", "binding", "observations", "requestedPackageIds", "observedPackageIds", "expectedVersion", "observedVersion", "installationLocation", "sideEffects", "outcome", "completeness", "completenessThreshold", "evidenceCeilingBytes", "timedOut", "truncated", "providerDisagreement", "indeterminateWrites", "ambiguous", "reassessmentRequired", "retryEligible", "retryBudget", "automaticRollback", "guidanceRef", "recoveryRef", "auditId", "replayId", "retention", "privacy", "sanitizationRef"] as const;
 const validEntry = (entry: AcquisitionVerificationEntry, scopeDigest: string, now: Date) => exact(entry, entryKeys) && id.test(entry.id) && semver.test(entry.version) && closed(statuses, entry.status)
-  && id.test(entry.owner) && id.test(entry.preparer) && entry.owner !== entry.preparer && dense(entry.approvals) && validWindow(entry.lifecycle)
+  && identity.test(entry.owner) && (entry.preparer === "" || identity.test(entry.preparer)) && entry.owner !== entry.preparer && dense(entry.approvals) && validWindow(entry.lifecycle)
   && dense(entry.supersedes) && entry.supersedes.every(id.test.bind(id)) && (entry.supersededBy === "" || id.test(entry.supersededBy)) && dense(entry.conflictsWith) && entry.conflictsWith.every(id.test.bind(id))
   && validScope(entry.scope) && validBinding(entry.binding) && dense(entry.observations) && entry.observations.length === 2
   && entry.observations.every((observation) => validObservation(observation, entry, scopeDigest, now)) && new Set(entry.observations.map((observation) => observation.phase)).size === 2
@@ -98,8 +98,9 @@ export async function resolveAcquisitionVerification(registry: AcquisitionVerifi
   if (!validApprovals(entry.owner, entry.preparer, entry.approvals, await acquisitionVerificationApprovalSubjectDigest(entry))) return no("approval-invalid");
   const bytes = entry.observations.reduce((total, observation) => total + observation.sizeBytes, 0);
   const pre = entry.observations.find((observation) => observation.phase === "pre")!; const post = entry.observations.find((observation) => observation.phase === "post")!;
-  const identities = new Set([registry.owner, registry.preparer, entry.owner, entry.preparer, ...registry.approvals.map((approval) => approval.reviewer), ...entry.approvals.map((approval) => approval.reviewer)]);
-  if ([pre.observer, post.observer, pre.provenanceRef, post.provenanceRef].some((identity) => identities.has(identity)) || pre.provenanceRef === post.provenanceRef
+  const governance: readonly (readonly [string, string])[] = [[registry.owner, "product-policy-owner"], [entry.owner, "product-policy-owner"], ...[registry.preparer, entry.preparer].filter(Boolean).map((identity) => [identity, "preparer"] as const), ...[...registry.approvals, ...entry.approvals].map((approval) => [approval.reviewer, approval.role] as const)];
+  const roleSets = new Map<string, Set<string>>(); for (const [identity, role] of governance) roleSets.set(identity, (roleSets.get(identity) ?? new Set()).add(role));
+  if ([...roleSets.values()].some((assigned) => assigned.size !== 1) || [pre.observer, post.observer, pre.provenanceRef, post.provenanceRef].some((identity) => roleSets.has(identity)) || pre.provenanceRef === post.provenanceRef || pre.provenanceDigest === post.provenanceDigest
     || new Set([pre.artifactSha256, pre.outputSha256, post.artifactSha256, post.outputSha256]).size !== 4) return no("evidence-invalid");
   if (entry.outcome !== "success" || entry.timedOut || entry.truncated || entry.providerDisagreement || entry.indeterminateWrites || entry.ambiguous || entry.reassessmentRequired
     || entry.retryEligible || entry.retryBudget !== 0 || entry.conflictsWith.length > 0 || entry.sideEffects.length !== 1 || entry.sideEffects[0] !== "package-installed" || entry.completeness !== 1
@@ -114,7 +115,7 @@ export async function resolveAcquisitionVerification(registry: AcquisitionVerifi
 
 const registryKeys = ["schemaVersion", "id", "version", "status", "owner", "preparer", "requiredApprovals", "approvals", "lifecycle", "entries", "digest"] as const;
 const validRegistry = (registry: AcquisitionVerificationRegistry) => exact(registry, registryKeys) && registry.schemaVersion === "AcquisitionVerificationRegistryV1" && id.test(registry.id)
-  && semver.test(registry.version) && closed(statuses, registry.status) && id.test(registry.owner) && id.test(registry.preparer) && registry.owner !== registry.preparer
+  && semver.test(registry.version) && closed(statuses, registry.status) && identity.test(registry.owner) && (registry.preparer === "" || identity.test(registry.preparer)) && registry.owner !== registry.preparer
   && dense(registry.requiredApprovals) && registry.requiredApprovals.length === roles.length && roles.every((role) => registry.requiredApprovals.includes(role))
   && dense(registry.approvals) && validWindow(registry.lifecycle) && dense(registry.entries) && registry.entries.every(data);
 const no = (reason: Exclude<VerificationResolution, { structurallyEligible: true }>["reason"]): VerificationResolution => ({ available: false, structurallyEligible: false, reason });
