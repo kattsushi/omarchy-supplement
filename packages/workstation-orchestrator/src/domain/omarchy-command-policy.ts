@@ -27,7 +27,7 @@ const core = createProviderCommandPolicy({
   validScope: (scope: CommandScope) => scope.platform === "linux" && ["omarchy-3", "omarchy-4"].includes(scope.omarchyGeneration)
     && scope.provider === "omarchy" && observedVersion.test(scope.observedOmarchyVersion),
   validRegistryVersion: (version: string) => semver.test(version), validEntryVersion: (version: string) => semver.test(version),
-  evidenceContext: (entry: Pick<OmarchyCommandPolicyEntry, "scope" | "grammar">) => ({ scope: entry.scope, grammar: entry.grammar }),
+  evidenceContext: (_entry: Pick<OmarchyCommandPolicyEntry, "scope" | "grammar">) => ({}),
 });
 
 export const canonicalCommandPolicyPayload = (registry: OmarchyCommandPolicyRegistry): string => core.canonicalPayload(registry);

@@ -48,23 +48,26 @@ const current = (window: ProviderCommandPolicyWindow, now: Date) => validWindow(
 
 export function createProviderCommandPolicy<SchemaVersion extends string, Scope, Role extends string>(specialization: ProviderCommandPolicySpecialization<SchemaVersion, Scope, Role>) {
   type PolicyEntry = Entry<Scope, Role>; type PolicyRegistry = Registry<SchemaVersion, Scope, Role>;
+  const scopeKeys = Object.freeze([...specialization.scopeKeys]);
   const canonicalPayload = (registry: PolicyRegistry): string => {
     if (!record(registry)) throw new TypeError("non-plain registry"); canonicalize(registry);
     const { digest: _digest, ...payload } = registry; return canonicalize(payload);
   };
   const policyDigest = (registry: PolicyRegistry) => digest(canonicalPayload(registry));
-  const evidenceContextDigest = (entry: Pick<PolicyEntry, "scope" | "grammar">): Promise<string> => {
+  const contextResult = async (entry: Pick<PolicyEntry, "scope" | "grammar">) => { try {
     if (!dataRecord(entry) || !Object.hasOwn(entry, "scope") || !Object.hasOwn(entry, "grammar")) throw new TypeError("non-plain entry");
-    return digest(canonicalize(specialization.evidenceContext(entry)));
-  };
+    const detached = clone(entry); const providerContext = clone(specialization.evidenceContext(freeze(detached)));
+    return { valid: true, digest: await digest(canonicalize({ schemaVersion: specialization.schemaVersion, scope: detached.scope, grammar: detached.grammar, providerContext })) };
+  } catch { return { valid: false, digest: await digest(canonicalize({ schemaVersion: specialization.schemaVersion, invalid: true })) }; } };
+  const evidenceContextDigest = async (entry: Pick<PolicyEntry, "scope" | "grammar">): Promise<string> => (await contextResult(entry)).digest;
   const validateIntegrity = async (registry: PolicyRegistry): Promise<boolean> => {
     try { const field = record(registry) ? Object.getOwnPropertyDescriptor(registry, "digest") : undefined;
       return field !== undefined && "value" in field && sha.test(field.value) && field.value === await policyDigest(registry); } catch { return false; }
   };
-  const validScope = (scope: Scope) => dataRecord(scope) && Object.keys(scope).length === specialization.scopeKeys.length
-    && specialization.scopeKeys.every((key) => canonical(scope[key])) && specialization.validScope(scope);
+  const validScope = (scope: Scope) => { try { const detached = freeze(clone(scope)); return dataRecord(detached) && Object.keys(detached).length === scopeKeys.length
+    && scopeKeys.every((key) => canonical(detached[key])) && specialization.validScope(detached) === true ? detached : undefined; } catch { return undefined; } };
   const validRegistry = (registry: PolicyRegistry) => registry.schemaVersion === specialization.schemaVersion && canonical(registry.id)
-    && specialization.validRegistryVersion(registry.version) && closed(statuses, registry.status) && canonical(registry.owner) && canonical(registry.preparer)
+    && specialization.validRegistryVersion(registry.version) === true && closed(statuses, registry.status) && canonical(registry.owner) && canonical(registry.preparer)
     && !same(registry.owner, registry.preparer) && registry.requiredApprovals.length === specialization.reviewerRoles.length
     && specialization.reviewerRoles.every((role) => registry.requiredApprovals.includes(role));
   const validApprovals = (owner: string, preparer: string, required: readonly Role[], approvals: readonly ProviderCommandApproval<Role>[]) => approvals.length === required.length
@@ -72,8 +75,8 @@ export function createProviderCommandPolicy<SchemaVersion extends string, Scope,
     && approvals.every((approval) => closed(specialization.reviewerRoles, approval.role) && canonical(approval.reviewer) && approval.decision === "approved" && timestamp(approval.decidedAt)
       && signoff.test(approval.signoffRef) && !same(approval.reviewer, owner) && !same(approval.reviewer, preparer))
     && new Set(approvals.map((approval) => approval.reviewer)).size === approvals.length;
-  const validEntry = (entry: PolicyEntry) => canonical(entry.id) && specialization.validEntryVersion(entry.version) && closed(statuses, entry.status)
-    && canonical(entry.owner) && canonical(entry.preparer) && !same(entry.owner, entry.preparer) && validScope(entry.scope)
+  const validEntry = (entry: PolicyEntry) => canonical(entry.id) && specialization.validEntryVersion(entry.version) === true && closed(statuses, entry.status)
+    && canonical(entry.owner) && canonical(entry.preparer) && !same(entry.owner, entry.preparer)
     && closed(["user", "elevated"] as const, entry.privilege) && closed(["noninteractive", "interactive"] as const, entry.prompt)
     && closed(["forbidden", "required"] as const, entry.network) && closed(["none", "bounded"] as const, entry.disclosure)
     && closed(["read-only", "mutating"] as const, entry.sideEffect) && closed(["required", "not-required"] as const, entry.confirmation)
@@ -88,8 +91,8 @@ export function createProviderCommandPolicy<SchemaVersion extends string, Scope,
       if (!registry.entries.every((entry) => canonical(entry.id)) || new Set(registry.entries.map((entry) => entry.id)).size !== registry.entries.length) return unavailable("policy-invalid");
       if (!validApprovals(registry.owner, registry.preparer, registry.requiredApprovals, registry.approvals)) return unavailable("approval-invalid");
       if (!current(registry.lifecycle, now)) return unavailable("outside-window");
-      if (!validScope(scope)) return unavailable("scope-mismatch");
-      const exact = registry.entries.filter((entry) => validScope(entry.scope) && specialization.scopeKeys.every((key) => entry.scope[key] === scope[key]));
+      const requested = validScope(scope); if (!requested) return unavailable("scope-mismatch");
+      const exact = registry.entries.filter((entry) => { const candidate = validScope(entry.scope); return candidate && scopeKeys.every((key) => candidate[key] === requested[key]); });
       if (exact.length === 0) return unavailable("scope-mismatch");
       if (exact.length > 1 || exact.some((entry) => exact.some((other) => entry !== other && entry.conflictsWith.includes(other.id)))) return unavailable("ambiguous");
       const entry = exact[0]!;
@@ -99,8 +102,8 @@ export function createProviderCommandPolicy<SchemaVersion extends string, Scope,
       if (!validArguments(entry.grammar, argv)) return unavailable("argument-invalid");
       if (!current(entry.lifecycle, now)) return unavailable("outside-window");
       if (!entry.evidence.every(validProvenance)) return unavailable("provenance-invalid");
-      const context = await evidenceContextDigest(entry);
-      if (!entry.evidence.some((evidence) => validNativeEvidence(evidence, entry, context, now))) return unavailable("native-evidence-invalid");
+      const context = await contextResult(entry); if (!context.valid) return unavailable("native-evidence-invalid");
+      if (!entry.evidence.some((evidence) => validNativeEvidence(evidence, entry, context.digest, now))) return unavailable("native-evidence-invalid");
       return { available: true, entry };
     } catch { return unavailable("policy-invalid"); }
   };
@@ -108,6 +111,8 @@ export function createProviderCommandPolicy<SchemaVersion extends string, Scope,
 }
 
 const unavailable = <Entry>(reason: ProviderCommandPolicyUnavailableReason): ProviderCommandPolicyResolution<Entry> => ({ available: false, reason });
+const clone = <T>(value: T): T => JSON.parse(canonicalize(value)) as T;
+const freeze = <T>(value: T): T => { if (value !== null && typeof value === "object") { Object.values(value).forEach(freeze); Object.freeze(value); } return value; };
 async function digest(payload: string): Promise<string> { const bytes = new TextEncoder().encode(payload); const value = await crypto.subtle.digest("SHA-256", bytes);
   return [...new Uint8Array(value)].map((item) => item.toString(16).padStart(2, "0")).join(""); }
 const validProvenance = (evidence: ProviderCommandEvidence) => closed(["structural", "fixture", "native"] as const, evidence.source)

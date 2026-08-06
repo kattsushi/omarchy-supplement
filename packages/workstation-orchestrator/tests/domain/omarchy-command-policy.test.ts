@@ -2,8 +2,9 @@ import { describe, expect, it } from "vitest";
 import { readFile } from "node:fs/promises";
 import {
   commandEvidenceContextDigest, commandPolicyDigest, resolveOmarchyCommandPolicy, validateCommandPolicyIntegrity,
-  type CommandPolicyStatus, type CommandScope, type OmarchyCommandPolicyEntry, type OmarchyCommandPolicyRegistry,
+  type CommandApprovalRole, type CommandPolicyStatus, type CommandScope, type OmarchyCommandPolicyEntry, type OmarchyCommandPolicyRegistry,
 } from "../../src/domain/omarchy-command-policy.js";
+import { createProviderCommandPolicy, type ProviderCommandPolicySpecialization } from "../../src/domain/provider-command-policy.js";
 import { draftOmarchyCommandPolicy } from "../../src/infrastructure/providers/draft-omarchy-command-policy.js";
 
 const now = new Date("2026-08-10T00:00:00.000Z"); const hash = "a".repeat(64);
@@ -37,6 +38,10 @@ const resolve = async (registry: OmarchyCommandPolicyRegistry, candidateScope = 
 const reason = async (registry: OmarchyCommandPolicyRegistry, candidateScope = scope, argv?: readonly string[]) => {
   const result = await resolve(registry, candidateScope, argv); return result.available ? undefined : result.reason;
 };
+type Specialization = ProviderCommandPolicySpecialization<"OmarchyCommandPolicyRegistryV1", CommandScope, CommandApprovalRole>;
+const generic = (overrides: Partial<Specialization> = {}) => createProviderCommandPolicy({ schemaVersion: "OmarchyCommandPolicyRegistryV1",
+  reviewerRoles: ["security", "omarchy-native-capability"], scopeKeys: ["platform", "architecture", "omarchyGeneration", "observedOmarchyVersion", "provider", "capabilityId", "variantId", "binaryIdentity"],
+  validScope: () => true, validRegistryVersion: () => true, validEntryVersion: () => true, evidenceContext: () => ({}), ...overrides });
 
 describe("draft Omarchy command policy", () => {
   it("ships an empty integrity-valid draft that is unavailable", async () => {
@@ -168,6 +173,23 @@ describe("draft Omarchy command policy", () => {
     const duplicate = { ...entry, version: "2.0.0", scope: { ...scope, architecture: "arm64" } };
     expect(await reason(await signed({}, [entry, duplicate]))).toBe("policy-invalid");
     expect(await reason(await signed({}, [{ ...entry, id: " policy:other-test ", scope: duplicate.scope }]))).toBe("policy-invalid");
+  });
+  it("fails closed at the generic specialization boundary", async () => {
+    const registry = await signed({}, [{ ...entry, evidence: [{ ...evidence, fixture: false }] }]); const argv = ["fixture-bin", "fixture-route", "target", "--fixture-flag"]; const calls = { scope: 0, registry: 0, entry: 0, context: 0 };
+    const core = generic({ validScope: () => (++calls.scope, true), validRegistryVersion: () => (++calls.registry, true), validEntryVersion: () => (++calls.entry, true), evidenceContext: () => (++calls.context, {}) });
+    expect(await core.resolve(registry, scope, argv, now)).toMatchObject({ available: true });
+    expect(calls).toEqual({ scope: 2, registry: 1, entry: 1, context: 1 });
+    expect(await core.evidenceContextDigest(entry)).not.toBe(await core.evidenceContextDigest({ ...entry, scope: { ...scope, architecture: "arm64" } }));
+    const mutate = generic({ validScope: (candidate) => ((candidate as { architecture: string }).architecture = "collapsed", true) });
+    await expect(mutate.resolve(registry, scope, [], now)).resolves.toMatchObject({ available: false, reason: "scope-mismatch" }); expect(scope.architecture).toBe("x86_64");
+    const throws = () => { throw new Error("provider"); };
+    for (const callbacks of [{ validScope: () => ({}) as unknown as boolean }, { validRegistryVersion: () => ({}) as unknown as boolean }, { validEntryVersion: () => ({}) as unknown as boolean }, { validRegistryVersion: throws }, { validEntryVersion: throws }])
+      await expect(generic(callbacks).resolve(registry, scope, [], now)).resolves.toMatchObject({ available: false });
+    const cyclic: Record<string, unknown> = {}; cyclic.self = cyclic;
+    for (const evidenceContext of [throws, () => cyclic]) {
+      const invalid = generic({ evidenceContext }); await expect(invalid.evidenceContextDigest(entry)).resolves.toMatch(/^[a-f0-9]{64}$/);
+      await expect(invalid.resolve(registry, scope, argv, now)).resolves.toMatchObject({ available: false, reason: "native-evidence-invalid" });
+    }
   });
   it("stays absent from production composition", async () => {
     const sources = await Promise.all(["read-only.ts", "mutation.ts"].map((file) => readFile(new URL(`../../src/composition/${file}`, import.meta.url), "utf8")));
