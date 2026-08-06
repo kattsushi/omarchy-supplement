@@ -165,33 +165,47 @@ native-environment claim.
 
 | Reference | Strength | What it establishes | What it does not establish |
 |---|---|---|---|
+| [PR #41](https://github.com/kattsushi/omarchy-supplement/pull/41) and [candidate commit `bd1ddf0ce7294dfe73d01cdc890a0838d1e2d8c7`](https://github.com/kattsushi/omarchy-supplement/commit/bd1ddf0ce7294dfe73d01cdc890a0838d1e2d8c7) | delivery context | An empty versioned draft Homebrew command-policy registry and structural contract were delivered as a feature candidate | Merge, approval, production activation, a supported formula, cask, argv, or native Homebrew evidence |
 | [Homebrew command type](https://github.com/kattsushi/omarchy-supplement/blob/e0543f330dda46680ecd18eb394ffbeb613200a9/packages/workstation-orchestrator/src/application/ports/package-execution.ts#L17-L22) | structural | Closed scaffolded `brew install` argv shape | A supported native command |
 | [Fixture Homebrew discovery](https://github.com/kattsushi/omarchy-supplement/blob/e0543f330dda46680ecd18eb394ffbeb613200a9/packages/workstation-orchestrator/src/infrastructure/platform/fixtures.ts#L69-L100) | fixture | Fixture-only macOS capability descriptions | Native Homebrew capability evidence |
 | [Fixture discovery tests](https://github.com/kattsushi/omarchy-supplement/blob/e0543f330dda46680ecd18eb394ffbeb613200a9/packages/workstation-orchestrator/tests/infrastructure/fixture-parsers.test.ts#L21-L28) | fixture | Fixtures never create an execution capability | Native package acquisition behavior |
 | [Sandbox exact-argv test](https://github.com/kattsushi/omarchy-supplement/blob/e0543f330dda46680ecd18eb394ffbeb613200a9/packages/workstation-orchestrator/tests/integration/provider-execution-sandbox.test.ts#L73-L92) | fixture | Isolated fake executable receives exact fixture argv | A native Homebrew result |
 | [Homebrew decision requirement](https://github.com/kattsushi/omarchy-supplement/blob/e0543f330dda46680ecd18eb394ffbeb613200a9/packages/workstation-orchestrator/EXECUTION-GOVERNANCE.md#L124-L136) | policy draft | Primary/fallback evidence and no-silent-switch requirement | An approved Homebrew policy |
+| [Homebrew command-policy specialization](https://github.com/kattsushi/omarchy-supplement/blob/bd1ddf0ce7294dfe73d01cdc890a0838d1e2d8c7/packages/workstation-orchestrator/src/domain/homebrew-command-policy.ts#L1-L45) | structural | Exact platform, distribution, architecture, Homebrew version, binary, prefix, package-kind, capability, and variant scope; formula/cask route relationships; fixed cask ordering; and provider-specific evidence-context binding | A supported formula or cask, approved argv, native correctness, reviewer authenticity, or production authority |
+| [Shared provider command-policy core](https://github.com/kattsushi/omarchy-supplement/blob/bd1ddf0ce7294dfe73d01cdc890a0838d1e2d8c7/packages/workstation-orchestrator/src/domain/provider-command-policy.ts#L1-L168) | structural | The hardened provider entry hook composes with integrity, lifecycle, approval, provenance, native-evidence, exact-scope, argument, ambiguity, and strict plain-JSON runtime checks; shell routes and undeclared or dangerous flags fail closed | Homebrew-specific native evidence, real command correctness, external sign-off, or reviewer authenticity |
+| [Empty draft Homebrew registry](https://github.com/kattsushi/omarchy-supplement/blob/bd1ddf0ce7294dfe73d01cdc890a0838d1e2d8c7/packages/workstation-orchestrator/src/infrastructure/providers/draft-homebrew-command-policy.ts#L1-L8) | structural | Version `0.1.0` is integrity-valid and `draft`, claims no preparation or approval roles, has no approvals, and contains no entries | Any supported formula, cask, capability, argv, native evidence, adapter, production wiring, review, sign-off, or approval |
+| [Homebrew command-policy tests](https://github.com/kattsushi/omarchy-supplement/blob/bd1ddf0ce7294dfe73d01cdc890a0838d1e2d8c7/packages/workstation-orchestrator/tests/domain/homebrew-command-policy.test.ts#L1-L143) | fixture | Synthetic mechanics exercise exact scope and prefix relationships, kind/capability binding, fixed cask order, shell and dangerous-route/flag refusal, native-evidence/lifecycle/approval/provenance/integrity/ambiguity gates, hardened hook behavior, exotic runtime inputs, and absence from production composition | Native Homebrew behavior, real formula/cask correctness or support, external review, reviewer authenticity, production activation, or governance approval |
+| [Omarchy generic-hook regression tests](https://github.com/kattsushi/omarchy-supplement/blob/bd1ddf0ce7294dfe73d01cdc890a0838d1e2d8c7/packages/workstation-orchestrator/tests/domain/omarchy-command-policy.test.ts#L177-L200) | fixture | The shared entry hook preserves generic provider parity: detached frozen input, exactly one invocation, fail-closed invalid/throwing/async/mutating callbacks, and native-evidence context failure | Homebrew native capability, command correctness, or approval |
 | [Production provider port](https://github.com/kattsushi/omarchy-supplement/blob/e0543f330dda46680ecd18eb394ffbeb613200a9/packages/workstation-orchestrator/src/composition/mutation.ts#L16-L26) | unavailable | Real Homebrew execution stays typed-unavailable | Production execution authority |
+| Ordinary candidate verification | structural | At candidate commit `bd1ddf0ce7294dfe73d01cdc890a0838d1e2d8c7`, the Homebrew suite passed 63 tests, the Omarchy suite passed 69 tests, the full package suite passed 265 tests, and typecheck, diff-check, production-import scan, all 48 scope combinations, and hook probes reported `PASS` | An RDD receipt or review, native evidence, real Homebrew correctness or support, governance approval, external reviewer sign-off, or production readiness |
 
 ### Acceptance-Criteria Mapping
 
 | Criterion | Current state |
 |---|---|
-| Exact platform/architecture/Homebrew version match | Not met; native evidence is unavailable |
-| Formula/cask capability and exact reviewed argv | Not met; fixture descriptions are non-authorizing |
-| Primary/fallback role and explicit opt-in | Structural planning exists; production policy approval is absent |
-| Binary provenance and support window | Not met |
+| Versioned policy registry and exact runtime domain | Partially met; an empty integrity-valid versioned draft and strict structural contract exist, but no entries, supported formula/cask capabilities, or approved argv exist |
+| Exact platform/distribution/architecture/prefix/Homebrew version match | Structurally enforced and tested; no approved entry or matching native evidence exists |
+| Formula/cask kind, capability, and exact reviewed argv | Structurally enforced and tested, including fixed cask ordering and dangerous route/flag refusal; synthetic mechanics do not establish real command correctness or support |
+| Approval, provenance, native-evidence binding, lifecycle, integrity, and ambiguity rules | Structurally enforced and tested; required external reviews, immutable sign-offs, reviewer-authenticity validation, and native evidence are absent |
+| Production composition and activation | Blocked; no trusted production context, policy adapter, or wiring exists, and production remains typed-unavailable |
 
 ### Missing Evidence, Decisions, and Approvers
 
-- Evidence: native macOS and approved Linux-fallback matrices, architecture, exact
-  Homebrew/binary versions, formula/cask discovery, exact native argv/result,
-  package identity, provenance, date, and reproducible evidence digest.
-- Decisions: supported platforms and versions, formula/cask policy, primary versus
-  fallback role, opt-in scope, prompt/network behavior, and support expiry.
-- Missing approvers: named Homebrew platform/capability maintainer and named
-  independent security command-policy reviewer.
-- External reviewer roles: Homebrew platform reviewer and command-execution security
-  reviewer.
+- Policy content: no supported formula, cask, capability, command entry, or approved
+  argv exists.
+- Evidence and support: no native Homebrew evidence, real command correctness, or
+  support claim exists for any platform, distribution, architecture, prefix,
+  Homebrew/binary version, package identity, argv/result, provenance, date, or
+  reproducible evidence digest.
+- Production integration: no trusted production context, policy adapter, or wiring
+  exists; production remains typed-unavailable.
+- Missing approvers and sign-offs: the external Independent Homebrew Native
+  Capability Reviewer and independent security command-policy reviewer, their
+  immutable sign-offs, and governance-owned reviewer-authenticity validation are
+  absent. Owner preparation acceptance and structural verification are not
+  approval.
+- Blocked work: Task 9A.1, Task 9B, and final whole-change `sdd-verify` remain
+  blocked.
 
 ### Stop Conditions
 
@@ -199,6 +213,8 @@ native-environment claim.
   evidence.
 - Stop if fallback can be silent, Homebrew can be installed automatically, or the
   package role is ambiguous.
+- Stop if synthetic scope, hook, or argv verification is treated as native evidence,
+  real command correctness, or support.
 - Stop until both required external roles sign this record separately.
 
 ## EV-ACQUISITION-VERIFICATION-v0.1.0
@@ -259,7 +275,9 @@ The first table covers committed blob bytes at base revision
 committed blob bytes at feature candidate revision
 `2884b54d34ba09f1ad2a3a26c33ff972025c33a9`. The Omarchy command-policy table
 covers committed blob bytes at candidate revision
-`9fb0fe191d67bda54663b00a8768120833ec9a6f`. All values are lowercase SHA-256.
+`9fb0fe191d67bda54663b00a8768120833ec9a6f`. The Homebrew command-policy table
+covers every materially supporting PR #41 artifact at candidate revision
+`bd1ddf0ce7294dfe73d01cdc890a0838d1e2d8c7`. All values are lowercase SHA-256.
 
 | Committed file | SHA-256 |
 |---|---|
@@ -286,6 +304,14 @@ covers committed blob bytes at candidate revision
 | `packages/workstation-orchestrator/src/domain/omarchy-command-policy.ts` | `d232c51b9b1be598b0613eee13e2100f6341f251a381fddb3183428d788c97a8` |
 | `packages/workstation-orchestrator/src/infrastructure/providers/draft-omarchy-command-policy.ts` | `c6a2a55f62eb0fa89cf1b835eb87e3b6ad6b733116b495abc2411fb1cad595ea` |
 | `packages/workstation-orchestrator/tests/domain/omarchy-command-policy.test.ts` | `ad7c4c8a09e235948c2d43b6ec60595c0f40b2b6b2f18ca5f3f970343f166fa7` |
+
+| Homebrew command-policy candidate file | SHA-256 |
+|---|---|
+| `packages/workstation-orchestrator/src/domain/homebrew-command-policy.ts` | `52f0ac06ec49a3adad630581c10e538f7bd3c67009eeee957eb86031a6fd5145` |
+| `packages/workstation-orchestrator/src/domain/provider-command-policy.ts` | `accfe03f732eaad1ff65d4f331f0ae634a4a76d345529fcaf977ba8e8d6cb9e1` |
+| `packages/workstation-orchestrator/src/infrastructure/providers/draft-homebrew-command-policy.ts` | `ae3837a9435d01f3f80465a000ce6a7edee12c7f4eb0dc9080b10fd30bc6e64e` |
+| `packages/workstation-orchestrator/tests/domain/homebrew-command-policy.test.ts` | `8632be0578cb5f0713ff0ace03f9cd1fe72d9d8e02892d87feafe6580f30faab` |
+| `packages/workstation-orchestrator/tests/domain/omarchy-command-policy.test.ts` | `b10fbadc450bea00b31f11169a69d5badc69e0c3992fba835de49ca1f48ef6b0` |
 
 ## Blocking State
 
