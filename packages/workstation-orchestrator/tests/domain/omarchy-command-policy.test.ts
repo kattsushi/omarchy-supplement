@@ -77,6 +77,19 @@ describe("draft Omarchy command policy", () => {
       await expect(resolve(candidate as OmarchyCommandPolicyRegistry)).resolves.toMatchObject({ available: false }); }
     await expect(resolve(JSON.parse(JSON.stringify(base)) as OmarchyCommandPolicyRegistry)).resolves.toMatchObject({ available: true });
   });
+  it("rejects non-plain external scopes", async () => {
+    class ScopeRecord {} const accessor = { ...scope }; Object.defineProperty(accessor, "architecture", { enumerable: true, get: () => scope.architecture });
+    const candidates: unknown[] = [Object.create(scope), Object.assign(new ScopeRecord(), scope), Object.assign(Object.create(null), scope), accessor,
+      { ...scope, [Symbol("extra")]: "x" }, { ...scope, extra: () => "x" }]; const registry = await signed({}, [{ ...entry, evidence: [{ ...evidence, fixture: false }] }]);
+    for (const candidate of candidates) await expect(resolve(registry, candidate as CommandScope)).resolves.toMatchObject({ available: false, reason: "scope-mismatch" });
+  });
+  it("rejects exotic external argv while preserving dense arrays", async () => {
+    const ordinary = ["fixture-bin", "fixture-route", "target", "--fixture-flag"]; class Args extends Array<string> {} const accessor = [...ordinary];
+    Object.defineProperty(accessor, "0", { enumerable: true, get: () => ordinary[0] }); const candidates = [Args.from(ordinary), accessor, Object.assign([...ordinary], { slice: () => [] })];
+    const registry = await signed({}, [{ ...entry, evidence: [{ ...evidence, fixture: false }] }]);
+    for (const candidate of candidates) await expect(resolve(registry, scope, candidate)).resolves.toMatchObject({ available: false, reason: "argument-invalid" });
+    await expect(resolve(registry, scope, ordinary)).resolves.toMatchObject({ available: true });
+  });
   it("rejects sparse and extra-key security arrays without throwing", async () => {
     const holes = <T>(length: number) => new Array<T>(length); const keyed = Object.assign(["fixture-route"], { extra: "unsupported" });
     const candidates: readonly [string, unknown][] = [

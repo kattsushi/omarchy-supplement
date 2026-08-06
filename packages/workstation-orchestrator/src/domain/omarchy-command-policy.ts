@@ -55,7 +55,7 @@ export async function commandPolicyDigest(registry: OmarchyCommandPolicyRegistry
   return digest(canonicalCommandPolicyPayload(registry));
 }
 export async function commandEvidenceContextDigest(entry: Pick<OmarchyCommandPolicyEntry, "scope" | "grammar">): Promise<string> {
-  if (!record(entry) || !Object.hasOwn(entry, "scope") || !Object.hasOwn(entry, "grammar")) throw new TypeError("non-plain entry");
+  if (!dataRecord(entry) || !Object.hasOwn(entry, "scope") || !Object.hasOwn(entry, "grammar")) throw new TypeError("non-plain entry");
   return digest(canonicalize({ scope: entry.scope, grammar: entry.grammar }));
 }
 async function digest(payload: string): Promise<string> {
@@ -98,7 +98,8 @@ const unavailable = (reason: CommandPolicyUnavailableReason): CommandPolicyResol
 const validRegistry = (registry: OmarchyCommandPolicyRegistry) => registry.schemaVersion === "OmarchyCommandPolicyRegistryV1" && canonical(registry.id)
   && semver.test(registry.version) && closed(statuses, registry.status) && canonical(registry.owner) && canonical(registry.preparer)
   && !same(registry.owner, registry.preparer) && registry.requiredApprovals.length === roles.length && roles.every((role) => registry.requiredApprovals.includes(role));
-const validScope = (scope: CommandScope) => scope.platform === "linux" && closed(["omarchy-3", "omarchy-4"] as const, scope.omarchyGeneration)
+const validScope = (scope: CommandScope) => dataRecord(scope) && Object.keys(scope).length === scopeKeys.length
+  && scope.platform === "linux" && closed(["omarchy-3", "omarchy-4"] as const, scope.omarchyGeneration)
   && scope.provider === "omarchy" && observedVersion.test(scope.observedOmarchyVersion) && scopeKeys.every((key) => canonical(scope[key]));
 const validEntry = (entry: OmarchyCommandPolicyEntry) => canonical(entry.id) && semver.test(entry.version) && closed(statuses, entry.status)
   && canonical(entry.owner) && canonical(entry.preparer) && !same(entry.owner, entry.preparer) && validScope(entry.scope)
@@ -130,8 +131,9 @@ const validGrammar = (grammar: CommandGrammar) => canonical(grammar.executable) 
   && new Set(grammar.options.map((option) => option.token)).size === grammar.options.length;
 const validPattern = (pattern: unknown): pattern is string => { try { return canonical(pattern) && pattern.startsWith("^(?:") && pattern.endsWith(")$") && (new RegExp(pattern), true); } catch { return false; } };
 const validArguments = (grammar: CommandGrammar, argv: readonly string[]) => {
-  if (!denseArray(argv) || !argv.every(canonical) || argv[0] !== grammar.executable || grammar.route.some((part, index) => argv[index + 1] !== part)) return false;
-  const tail = argv.slice(1 + grammar.route.length); const positional: string[] = []; const seen = new Set<string>();
+  if (!denseArray(argv) || argv[0] !== grammar.executable || grammar.route.some((part, index) => argv[index + 1] !== part)) return false;
+  const tail: string[] = []; for (let index = 0; index < argv.length; index++) { if (!canonical(argv[index])) return false; if (index > grammar.route.length) tail[tail.length] = argv[index]!; }
+  const positional: string[] = []; const seen = new Set<string>();
   for (let index = 0; index < tail.length; index++) { const token = tail[index]!; if (!token.startsWith("-")) { positional.push(token); continue; }
     const option = grammar.options.find((candidate) => candidate.token === token); if (!option || seen.has(token)) return false; seen.add(token);
     if (option.kind === "value") { const value = tail[++index]; if (!canonical(value) || value.startsWith("-") || !new RegExp(option.valuePattern!).test(value)) return false; }
@@ -143,8 +145,11 @@ const validArguments = (grammar: CommandGrammar, argv: readonly string[]) => {
 };
 const record = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value)
   && Object.getPrototypeOf(value) === Object.prototype;
-const denseArray = (value: unknown): value is readonly unknown[] => { if (!Array.isArray(value)) return false;
-  const keys = Reflect.ownKeys(value).filter((key) => key !== "length"); return keys.length === value.length && keys.every((key, index) => key === String(index)); };
+const dataRecord = (value: unknown): value is Record<string, unknown> => { if (!record(value)) return false; const keys = Object.keys(value); const fields = Object.getOwnPropertyDescriptors(value);
+  return Reflect.ownKeys(value).length === keys.length && keys.every((key) => fields[key]?.enumerable && "value" in fields[key]!); };
+const denseArray = (value: unknown): value is readonly unknown[] => { if (!Array.isArray(value) || Object.getPrototypeOf(value) !== Array.prototype) return false;
+  const keys = Reflect.ownKeys(value).filter((key) => key !== "length"); const fields = Object.getOwnPropertyDescriptors(value);
+  return keys.length === value.length && keys.every((key, index) => key === String(index) && fields[String(index)]?.enumerable && "value" in fields[String(index)]!); };
 const recordArray = (value: unknown) => denseArray(value) && value.every(record);
 const validRuntimeShape = (registry: unknown): registry is OmarchyCommandPolicyRegistry => record(registry) && record(registry.lifecycle)
   && denseArray(registry.requiredApprovals) && recordArray(registry.approvals) && recordArray(registry.entries)
@@ -155,8 +160,7 @@ function canonicalize(value: unknown, ancestors = new Set<object>()): string {
   if (value === null || typeof value === "boolean" || typeof value === "string" || (typeof value === "number" && Number.isFinite(value))) return JSON.stringify(value);
   if (typeof value !== "object" || ancestors.has(value)) throw new TypeError("non-JSON value"); ancestors.add(value);
   try { if (Array.isArray(value)) { if (!denseArray(value)) throw new TypeError("non-dense array"); return `[${value.map((item) => canonicalize(item, ancestors)).join(",")}]`; }
-    if (!record(value)) throw new TypeError("non-plain object"); const keys = Object.keys(value); const descriptors = Object.getOwnPropertyDescriptors(value);
-    if (Reflect.ownKeys(value).length !== keys.length || keys.some((key) => !descriptors[key]?.enumerable || !("value" in descriptors[key]!))) throw new TypeError("non-JSON property");
+    if (!dataRecord(value)) throw new TypeError("non-plain object"); const keys = Object.keys(value);
     return `{${keys.sort().map((key) => `${JSON.stringify(key)}:${canonicalize(value[key], ancestors)}`).join(",")}}`;
   } finally { ancestors.delete(value); }
 }
