@@ -313,6 +313,85 @@ native-environment claim.
 - Stop until the Evidence Owner and Independent Verification Reviewer are assigned
   and sign this record separately through a trusted external verification path.
 
+## EV-DISCLOSURE-CATALOG-v0.1.0
+
+| Field | Value |
+|---|---|
+| Status | `unapproved` |
+| Accountable owner | `kattsushi` |
+| Preparation role | Product Disclosure Owner record preparation, explicitly accepted by `kattsushi` in [issue #34 comment 5208973500](https://github.com/kattsushi/omarchy-supplement/issues/34#issuecomment-5208973500); this is administrative preparation only and is not approval |
+| Required reviewers | Security Reviewer and UX/Comprehension Reviewer; both are unassigned |
+| Sign-offs | None |
+| Approval effect | None; the record is exactly `unapproved`, and separate immutable sign-offs are required |
+
+### Evidence
+
+| Reference | Strength | What it establishes | What it does not establish |
+|---|---|---|---|
+| [PR #45](https://github.com/kattsushi/omarchy-supplement/pull/45) and [feature commit `ca6388256d699941a78838b0e4856f43e4e13757`](https://github.com/kattsushi/omarchy-supplement/commit/ca6388256d699941a78838b0e4856f43e4e13757) | delivery context | An empty versioned disclosure-catalog structural draft and contract are available as a feature candidate | Merge, approval, reviewed copy, production activation, rendering, or authority |
+| [Disclosure catalog domain](https://github.com/kattsushi/omarchy-supplement/blob/ca6388256d699941a78838b0e4856f43e4e13757/packages/workstation-orchestrator/src/domain/disclosure-catalog.ts#L1-L62) | structural | Catalog integrity and approval-subject binding; exact category completeness; exact runtime and instance binding; template, placeholder, privacy-classification, lifecycle, approval, relationship, and ambiguity schemas; exception-safe rejection of exotic runtime values; and a terminal that cannot return copy | Approved codes, copy, templates, locales, redaction behavior, reviewer authenticity, comprehension, accessibility quality, rendering, or runtime authority |
+| [Empty disclosure draft](https://github.com/kattsushi/omarchy-supplement/blob/ca6388256d699941a78838b0e4856f43e4e13757/packages/workstation-orchestrator/src/infrastructure/disclosures/draft-disclosure-catalog.ts#L1-L8) | structural | Version `0.1.0` is an integrity-valid empty `draft` with no required approvals, approvals, categories, entries, templates, locale content, or approved values | A valid production policy, any approved disclosure content, renderer, adapter, wiring, review, sign-off, or approval |
+| [Disclosure catalog tests](https://github.com/kattsushi/omarchy-supplement/blob/ca6388256d699941a78838b0e4856f43e4e13757/packages/workstation-orchestrator/tests/domain/disclosure-catalog.test.ts#L1-L34) | structural | Synthetic tests cover integrity, subject invalidation, category completeness, exact request/binding/instance relationships, template and placeholder schema, privacy classification binding, runtime-value refusal, immutable outputs, exotic runtime rejection, and absence from production imports | RDD evidence, copy review, comprehension findings, accessibility findings, privacy implementation evidence, native behavior, renderer behavior, or production readiness |
+| Ordinary candidate verification | structural | At feature commit `ca6388256d699941a78838b0e4856f43e4e13757`, focused Vitest passed 38/38, full Vitest passed 398/398, typecheck and `git diff --check` passed, and direct adversarial, privacy-binding, and production-import checks reported `PASS` | An RDD receipt or review, copy/comprehension/accessibility review, native evidence, privacy implementation, external sign-off, approval, or authority |
+
+### Structural Guarantees
+
+- Catalog integrity and approval-subject digests bind governed content, including
+  templates, placeholder and privacy classifications, redaction-policy digests,
+  bindings, and lifecycle fields.
+- Required disclosure categories must be exact, complete, unique, and ordered;
+  each category must resolve to exactly one entry under the exact runtime binding.
+- Request, plan, confirmation, presentation, replay, expiry, and binding identities
+  must agree exactly. Stale, consumed, mismatched, or out-of-window instances fail
+  closed.
+- Template syntax, placeholder declarations, byte ceilings, privacy classification,
+  redaction-policy digest shape, retention, locale, accessibility mode, and
+  comprehension marker are structurally validated.
+- Sparse, subclassed, prototype-bearing, null-prototype, accessor-backed,
+  symbol-bearing, cyclic, over-keyed, and otherwise exotic runtime values fail
+  closed without coercion.
+- Even a synthetically complete structural candidate terminates unavailable at
+  `independent-copy-review-required`, with `authority: none` and copy approval
+  `not-established`. It returns only detached immutable identifiers and digests,
+  never templates, rendered output, or runtime values.
+
+### Acceptance-Criteria Mapping
+
+| Criterion | Current state |
+|---|---|
+| Versioned disclosure catalog and complete governed categories | Partially met; an empty integrity-valid versioned draft and complete structural category contract exist, but the draft contains no categories or entries |
+| Exact runtime, plan, confirmation, presentation, replay, and disclosure binding | Structurally enforced and tested; no trusted runtime adapter or production instance source exists |
+| Template, placeholder, locale, accessibility, comprehension, and privacy schema | Structurally enforced and tested with synthetic values; no approved codes, copy, templates, locales, redaction implementation, comprehension evidence, accessibility evidence, or privacy evidence exists |
+| Approval-subject binding and independent review terminal | Structurally enforced and tested; Security and UX/Comprehension reviewers are unassigned, no sign-offs exist, and structural eligibility remains unavailable pending independent copy review |
+| Production rendering and activation | Blocked; no trusted renderer, disclosure adapter, runtime wiring, approved values, or authority exists, and production remains typed-unavailable |
+
+### Missing Evidence, Decisions, and Approvers
+
+- Required reviewers and sign-offs: the independent Security Reviewer and
+  UX/Comprehension Reviewer are unassigned, and neither immutable sign-off exists.
+  Product Disclosure Owner preparation is not either review or sign-off.
+- Content and review: no approved disclosure codes, copy, templates, or locales
+  exist. Independent copy review, comprehension findings, and accessibility
+  evidence are absent.
+- Privacy and redaction: privacy classifications and redaction-policy digests are
+  only structural fields. Privacy evidence and a trusted redaction implementation
+  are absent.
+- Runtime and authority: no trusted renderer, disclosure adapter, runtime wiring,
+  runtime values, reviewer-authenticity authority, or execution authority exists.
+- Blocked work: production remains typed-unavailable. Task 9A.1, Task 9B, and final
+  whole-change `sdd-verify` remain blocked.
+
+### Stop Conditions
+
+- Stop if structural schema coverage, tests, fixtures, or the empty draft are
+  treated as approved disclosure content, copy review, comprehension,
+  accessibility, privacy implementation, native evidence, or runtime authority.
+- Stop at `independent-copy-review-required`; structural eligibility must not
+  render copy, accept runtime values, or produce an available result.
+- Stop until both required external reviewers are assigned and sign this record
+  separately, approved content and redaction behavior exist, and trusted renderer
+  and runtime-adapter boundaries are independently established.
+
 ## Integrity Index
 
 The first table covers committed blob bytes at base revision
@@ -324,7 +403,9 @@ covers committed blob bytes at candidate revision
 covers every materially supporting PR #41 artifact at candidate revision
 `bd1ddf0ce7294dfe73d01cdc890a0838d1e2d8c7`. The acquisition-verification table
 covers all three PR #43 feature artifacts at feature revision
-`5b22126c0aea50816d3ae531c174e898c105b016`. All values are independently
+`5b22126c0aea50816d3ae531c174e898c105b016`. The disclosure-catalog table covers
+all three PR #45 feature artifacts at feature revision
+`ca6388256d699941a78838b0e4856f43e4e13757`. All values are independently
 double-verified lowercase SHA-256 over committed blob bytes.
 
 | Committed file | SHA-256 |
@@ -367,9 +448,15 @@ double-verified lowercase SHA-256 over committed blob bytes.
 | `packages/workstation-orchestrator/src/infrastructure/verification/draft-acquisition-verification.ts` | `7ca8185a3ae6e690da9e0a6edcb6d51f1a9e791c896716e7e6ffe22bbd60a148` |
 | `packages/workstation-orchestrator/tests/domain/acquisition-verification.test.ts` | `e83a2c3dcdc875308b125448cd14d5d0f43fae312daaa76c590087c6f45fba3a` |
 
+| Disclosure-catalog feature file | SHA-256 |
+|---|---|
+| `packages/workstation-orchestrator/src/domain/disclosure-catalog.ts` | `ae5ba4b40927e1886b67871a9cd65874c9d7b8fb37c8cd2b575afc41161807a3` |
+| `packages/workstation-orchestrator/src/infrastructure/disclosures/draft-disclosure-catalog.ts` | `b41844648932963418e04d6945e57e100287abb0cef31f7ad7781cc63d1985ae` |
+| `packages/workstation-orchestrator/tests/domain/disclosure-catalog.test.ts` | `e7010ea4f02d0cfbfc68681795436d5d2eda920f00fc8ba0ed3fb4d4da7bb9d8` |
+
 ## Blocking State
 
-- Task 9A.1 is blocked: all four records are `unapproved`, required native evidence
+- Task 9A.1 is blocked: all five records are `unapproved`, required evidence
   is unavailable, and separate sign-offs are missing.
 - Task 9B is blocked behind Task 9A.1 and its own configuration evidence,
   confirmation, backup, ownership, and mutation-scope decisions.
