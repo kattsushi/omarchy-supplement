@@ -223,13 +223,14 @@ native-environment claim.
 |---|---|
 | Status | `unapproved` |
 | Accountable owner | `kattsushi` |
-| Accepted role | Product Policy Owner, explicitly accepted by `kattsushi` in [issue #34 comment 5199374901](https://github.com/kattsushi/omarchy-supplement/issues/34#issuecomment-5199374901); distinct from the coordinator-only acceptance in [comment 5199220193](https://github.com/kattsushi/omarchy-supplement/issues/34#issuecomment-5199220193) |
-| Approval effect | None; separate sign-off is required |
+| Preparation role | Product Policy Owner record preparation, explicitly accepted by `kattsushi` in [issue #34 comment 5199374901](https://github.com/kattsushi/omarchy-supplement/issues/34#issuecomment-5199374901); this is administrative preparation only, distinct from the coordinator-only acceptance in [comment 5199220193](https://github.com/kattsushi/omarchy-supplement/issues/34#issuecomment-5199220193), and is not approval |
+| Approval effect | None; the record is exactly `unapproved`, and separate immutable sign-offs are required |
 
 ### Evidence
 
 | Reference | Strength | What it establishes | What it does not establish |
 |---|---|---|---|
+| [PR #43](https://github.com/kattsushi/omarchy-supplement/pull/43) and [feature commit `5b22126c0aea50816d3ae531c174e898c105b016`](https://github.com/kattsushi/omarchy-supplement/commit/5b22126c0aea50816d3ae531c174e898c105b016) | delivery context | The empty acquisition-verification structural draft and contract are available as a feature candidate | Merge, approval, readiness, native authenticity, trusted-verifier authority, or production activation |
 | [Verification port and outcomes](https://github.com/kattsushi/omarchy-supplement/blob/e0543f330dda46680ecd18eb394ffbeb613200a9/packages/workstation-orchestrator/src/application/ports/package-execution.ts#L7-L10) | structural | Bounded provider report categories | Verification policy or threshold |
 | [Verification service boundary](https://github.com/kattsushi/omarchy-supplement/blob/e0543f330dda46680ecd18eb394ffbeb613200a9/packages/workstation-orchestrator/src/application/ports/package-execution.ts#L61-L66) | structural | Verification is a separate required capability | An approved verifier |
 | [Outcome handling](https://github.com/kattsushi/omarchy-supplement/blob/e0543f330dda46680ecd18eb394ffbeb613200a9/packages/workstation-orchestrator/src/application/services/package-execution.ts#L114-L127) | structural | Non-provider-reported outcomes require reassessment | Correct native acquisition verification |
@@ -237,28 +238,67 @@ native-environment claim.
 | [Sandbox bounded outcomes](https://github.com/kattsushi/omarchy-supplement/blob/e0543f330dda46680ecd18eb394ffbeb613200a9/packages/workstation-orchestrator/tests/integration/provider-execution-sandbox.test.ts#L94-L109) | fixture | Fake partial/failure/timeout/malformed outcomes do not mutate a sentinel | Native provider or workstation state |
 | [Verification requirements](https://github.com/kattsushi/omarchy-supplement/blob/e0543f330dda46680ecd18eb394ffbeb613200a9/packages/workstation-orchestrator/EXECUTION-GOVERNANCE.md#L70-L76) | policy draft | Baseline, threshold, freshness, and independence requirements | An approved verification policy |
 | [Production verifier](https://github.com/kattsushi/omarchy-supplement/blob/e0543f330dda46680ecd18eb394ffbeb613200a9/packages/workstation-orchestrator/src/composition/mutation.ts#L16-L26) | unavailable | Production verification stays typed-unavailable | Independently verified acquisition |
+| [Acquisition-verification registry and resolver](https://github.com/kattsushi/omarchy-supplement/blob/5b22126c0aea50816d3ae531c174e898c105b016/packages/workstation-orchestrator/src/domain/acquisition-verification.ts#L1-L132) | structural | Exact scope and plan/request binding; command, provider-policy, mapping-catalog, mapping-entry, and verification-policy digests; canonical integrity and approval-subject digests; lifecycle, approval, evidence-size, freshness, ambiguity, recovery, and success-shape checks; strict runtime-domain rejection | Authentic reviewers, authentic native observations, trusted-verifier authority, or a successful/ready acquisition result |
+| [Empty acquisition-verification draft](https://github.com/kattsushi/omarchy-supplement/blob/5b22126c0aea50816d3ae531c174e898c105b016/packages/workstation-orchestrator/src/infrastructure/verification/draft-acquisition-verification.ts#L1-L7) | structural | Version `0.1.0` is an integrity-valid empty `draft` with no preparer, required approvals, approvals, or entries | An approved policy, evidence entry, verifier adapter/port implementation, native evidence, production wiring, or readiness |
+| [Acquisition-verification tests](https://github.com/kattsushi/omarchy-supplement/blob/5b22126c0aea50816d3ae531c174e898c105b016/packages/workstation-orchestrator/tests/domain/acquisition-verification.test.ts#L1-L160) | structural | Synthetic tests exercise exact scope/binding and plan-policy-mapping-evidence semantics, approval-subject invalidation, identity/evidence/provenance namespaces, role and evidence independence, pre/post coherence, fail-closed outcomes, exotic runtime rejection, and absence from production composition | A receipt, native or authentic evidence, trusted verification, governance approval, or production readiness |
+| Ordinary candidate verification | structural | At feature commit `5b22126c0aea50816d3ae531c174e898c105b016`, the focused suite passed 95 tests, the full package suite passed 360 tests, typecheck passed, and `git diff --check` passed; 13 namespace/role/digest probes and 58 binding/runtime probes also passed | An RDD receipt or review, native/authentic evidence, trusted-verifier authority, external sign-off, approval, or readiness |
+
+### Structural Semantics
+
+- Scope is exact across provider, capability, platform, architecture, provider
+  version, and package kind. Binding is exact across plan and request identity,
+  plan binding, command, provider policy, mapping catalog, mapping entry, and
+  verification policy digests.
+- Canonical registry integrity excludes only the registry digest. Canonical
+  approval subjects exclude approval arrays, subject/sign-off fields, and the
+  registry digest, so changes to plan, policy, mapping, scope, or evidence
+  semantics invalidate the corresponding approval subject.
+- Governance identities use `identity:*`; observation IDs use `evidence:*`; and
+  provenance references use `provenance:*`. Governance roles are pairwise
+  independent except that one Product Policy Owner may own the registry and its
+  entry. Preparers, external reviewers, and pre/post observers cannot reuse a
+  governance identity; pre/post observers and evidence IDs must differ.
+- Pre/post provenance references must differ, and all six provenance, artifact,
+  and output digests must be globally distinct. Pre-state must be absent,
+  post-state present, and package identity, version, location, requested set,
+  observed set, freshness, evidence ceiling, outcome, and side effects must agree
+  exactly with the request and policy.
+- Even a synthetically complete structural candidate terminates as
+  `available: false`, `independent-verification-required`, authenticity
+  `not-established`, and authority `trusted-external-verifier-required`. Native
+  and structural labels alone cannot create a success or readiness path.
+- Sparse, subclassed, prototype-bearing, null-prototype, accessor-backed,
+  symbol-bearing, cyclic, over-keyed, and otherwise non-canonical runtime values
+  fail closed without mutating the input.
 
 ### Acceptance-Criteria Mapping
 
 | Criterion | Current state |
 |---|---|
-| Provider/capability-specific pre-effect baseline | Not met |
-| Independent post-effect checks and success threshold | Not met |
-| Partial, unknown, timeout, and truncation policy | Draft requirements and fixture behavior only |
-| Freshness, evidence limits, and reassessment rules | Not met |
-| Provider exit success cannot imply independent verification | Structural boundary exists; policy approval is absent |
+| Provider/capability-specific pre-effect baseline | Structurally modeled and tested; no native baseline, authentic observation, or entry exists |
+| Independent post-effect checks and success threshold | Structurally modeled and tested; no trusted verifier, native post-effect observation, approved threshold, or success/readiness path exists |
+| Exact plan, policy, mapping, scope, and evidence binding | Structurally enforced and tested, including approval-subject invalidation; no authentic evidence or approved entry exists |
+| Identity namespaces and role/evidence independence | Structurally enforced and tested; Evidence Owner and Independent Verification Reviewer remain unassigned and unsigned |
+| Partial, unknown, timeout, truncation, disagreement, and ambiguous outcomes | Fail closed structurally; no native outcome observations or approved policy exist |
+| Freshness, evidence limits, reassessment, retry, recovery, audit, and privacy rules | Structurally modeled and tested; no trusted runtime adapter, audit authority, or authentic evidence exists |
+| Production composition and activation | Blocked; the draft has no entries, trusted verifier, adapter/port implementation, or wiring, and production remains typed-unavailable |
 
 ### Missing Evidence, Decisions, and Approvers
 
-- Evidence: provider/capability baseline and post-check matrix, native observations,
-  independence proof, threshold rationale, freshness timestamps, truncation/timeout
-  cases, maximum evidence size, and reproducible evidence digests.
-- Decisions: success/partial/unverifiable thresholds, allowed outcome per threshold,
-  freshness window, independence rule, evidence size, and reassessment behavior.
-- Missing approvers: named product evidence-policy reviewer, named independent
-  verification reviewer, and named security reviewer.
-- External reviewer roles: acquisition-evidence method reviewer, provider-specific
-  verification reviewer, and security reviewer.
+- Ownership and sign-off: Evidence Owner and Independent Verification Reviewer are
+  unassigned; their separate immutable sign-offs are absent. Product Policy Owner
+  preparation is not either sign-off and is not approval.
+- Authenticity and native evidence: reviewer authenticity, authentic baseline and
+  post-effect observations, provider/capability native evidence, and trusted
+  independence proof are absent.
+- Runtime and authority: no trusted verifier, acquisition-verification runtime
+  adapter/port implementation, production wiring, or governance-owned audit and
+  reviewer-authenticity authority exists. Production remains typed-unavailable.
+- Policy content: the draft contains no entries. Native threshold rationale,
+  freshness observations, timeout/truncation cases, evidence-size observations,
+  replay/audit lineage, and reproducible native evidence digests are absent.
+- Blocked work: Task 9A.1, Task 9B, and final whole-change `sdd-verify` remain
+  blocked.
 
 ### Stop Conditions
 
@@ -266,7 +306,12 @@ native-environment claim.
   treated as independent native acquisition verification.
 - Stop on missing baseline, non-independent checks, stale/oversized evidence, unclear
   thresholds, partial/unknown promotion, or unresolved timeout/truncation behavior.
-- Stop until all three required external roles sign this record separately.
+- Stop at `independent-verification-required`; structural eligibility, a `native`
+  label, Product Policy Owner preparation, PR #43, and feature commit
+  `5b22126c0aea50816d3ae531c174e898c105b016` do not establish authenticity,
+  approval, merge, readiness, or execution authority.
+- Stop until the Evidence Owner and Independent Verification Reviewer are assigned
+  and sign this record separately through a trusted external verification path.
 
 ## Integrity Index
 
@@ -277,7 +322,10 @@ committed blob bytes at feature candidate revision
 covers committed blob bytes at candidate revision
 `9fb0fe191d67bda54663b00a8768120833ec9a6f`. The Homebrew command-policy table
 covers every materially supporting PR #41 artifact at candidate revision
-`bd1ddf0ce7294dfe73d01cdc890a0838d1e2d8c7`. All values are lowercase SHA-256.
+`bd1ddf0ce7294dfe73d01cdc890a0838d1e2d8c7`. The acquisition-verification table
+covers all three PR #43 feature artifacts at feature revision
+`5b22126c0aea50816d3ae531c174e898c105b016`. All values are independently
+double-verified lowercase SHA-256 over committed blob bytes.
 
 | Committed file | SHA-256 |
 |---|---|
@@ -312,6 +360,12 @@ covers every materially supporting PR #41 artifact at candidate revision
 | `packages/workstation-orchestrator/src/infrastructure/providers/draft-homebrew-command-policy.ts` | `ae3837a9435d01f3f80465a000ce6a7edee12c7f4eb0dc9080b10fd30bc6e64e` |
 | `packages/workstation-orchestrator/tests/domain/homebrew-command-policy.test.ts` | `8632be0578cb5f0713ff0ace03f9cd1fe72d9d8e02892d87feafe6580f30faab` |
 | `packages/workstation-orchestrator/tests/domain/omarchy-command-policy.test.ts` | `b10fbadc450bea00b31f11169a69d5badc69e0c3992fba835de49ca1f48ef6b0` |
+
+| Acquisition-verification feature file | SHA-256 |
+|---|---|
+| `packages/workstation-orchestrator/src/domain/acquisition-verification.ts` | `0d31ee11927b4ff3403f3a0be9921bc79a930ce6fb9ce19f64bca235fd92937f` |
+| `packages/workstation-orchestrator/src/infrastructure/verification/draft-acquisition-verification.ts` | `7ca8185a3ae6e690da9e0a6edcb6d51f1a9e791c896716e7e6ffe22bbd60a148` |
+| `packages/workstation-orchestrator/tests/domain/acquisition-verification.test.ts` | `e83a2c3dcdc875308b125448cd14d5d0f43fae312daaa76c590087c6f45fba3a` |
 
 ## Blocking State
 
