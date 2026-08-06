@@ -1,0 +1,262 @@
+# Production Execution Evidence Inventory
+
+## Authority Boundary
+
+This inventory grants no approval, production execution authority, or implementation
+authorization. Production package execution remains typed-unavailable. Every record
+below is `unapproved`; evidence classification does not substitute for approval.
+
+The accountable owner acceptance is administrative only: [`kattsushi` accepted the
+four corresponding accountable record-preparation roles](https://github.com/kattsushi/omarchy-supplement/issues/34#issuecomment-5199374901).
+This is distinct from the [coordinator-only acceptance](https://github.com/kattsushi/omarchy-supplement/issues/34#issuecomment-5199220193)
+and is not evidence validation, approver sign-off, or authority to run `omarchy`, `brew`, network, `sudo`, provider, or install effects.
+Governance decision records in `EXECUTION-GOVERNANCE.md` remain unresolved.
+
+Base evidence revision: [`e0543f330dda46680ecd18eb394ffbeb613200a9`](https://github.com/kattsushi/omarchy-supplement/commit/e0543f330dda46680ecd18eb394ffbeb613200a9).
+All source and test references in this inventory are immutable links at that revision.
+Source, tests, and fixtures make no native-environment claim.
+
+## Review Path
+
+1. Confirm each referenced blob against the integrity index.
+2. Review evidence only at its recorded strength: `structural`, `fixture`,
+   `policy draft`, or `unavailable`.
+3. Collect every item listed under missing evidence and decisions.
+4. Obtain named external reviewers for every listed role.
+5. Record a separate, immutable sign-off for each record; owner acceptance and a
+   review comment are not sign-off.
+6. Recheck all record and global stop conditions together before proposing a new
+   production-activation slice.
+
+## Historical Context
+
+| Pull request | Context retained by this inventory |
+|---|---|
+| [#25](https://github.com/kattsushi/omarchy-supplement/pull/25) | Fixture-only provider discovery and mapping refusal semantics; no execution authority. |
+| [#31](https://github.com/kattsushi/omarchy-supplement/pull/31) | Read-only guidance and bounded evidence labeling; native Omarchy capability remained unavailable. |
+| [#32](https://github.com/kattsushi/omarchy-supplement/pull/32) | Sandbox/default-unavailable execution scaffolding; exact-argv tests are fixture evidence only. |
+| [#33](https://github.com/kattsushi/omarchy-supplement/pull/33) | Non-authorizing governance policy draft at the base evidence revision. |
+
+## EV-MAPPING-CATALOG-v0.1.0
+
+| Field | Value |
+|---|---|
+| Status | `unapproved` |
+| Accountable owner | `kattsushi` |
+| Accepted role | Mapping Catalog Owner, explicitly accepted by `kattsushi` in [issue #34 comment 5199374901](https://github.com/kattsushi/omarchy-supplement/issues/34#issuecomment-5199374901); distinct from the coordinator-only acceptance in [comment 5199220193](https://github.com/kattsushi/omarchy-supplement/issues/34#issuecomment-5199220193) |
+| Approval effect | None; separate sign-off is required |
+
+### Evidence
+
+| Reference | Strength | What it establishes | What it does not establish |
+|---|---|---|---|
+| [Catalog requirements](https://github.com/kattsushi/omarchy-supplement/blob/e0543f330dda46680ecd18eb394ffbeb613200a9/packages/workstation-orchestrator/EXECUTION-GOVERNANCE.md#L50-L56) | policy draft | Required catalog fields and fail-closed intent | An approved catalog or entry |
+| [Plan mapping guards](https://github.com/kattsushi/omarchy-supplement/blob/e0543f330dda46680ecd18eb394ffbeb613200a9/packages/workstation-orchestrator/src/application/services/package-execution.ts#L50-L55) | structural | Scaffolding rejects missing mappings and unsupported batch shape | Mapping correctness, provenance, or support |
+| [Mapping refusal tests](https://github.com/kattsushi/omarchy-supplement/blob/e0543f330dda46680ecd18eb394ffbeb613200a9/packages/workstation-orchestrator/tests/application/package-execution.test.ts#L101-L113) | fixture | Deterministic missing-mapping refusal | Native package identity or provider behavior |
+| [Production mapping port](https://github.com/kattsushi/omarchy-supplement/blob/e0543f330dda46680ecd18eb394ffbeb613200a9/packages/workstation-orchestrator/src/composition/mutation.ts#L16-L26) | unavailable | Production mapping evidence fails typed-unavailable | Any production mapping authority |
+
+### Acceptance-Criteria Mapping
+
+| Criterion | Current state |
+|---|---|
+| Versioned catalog with scoped logical-to-provider entries | Not met; no catalog artifact exists |
+| Provenance and integrity mechanism | Not met; no catalog signature or digest policy exists |
+| Ownership, conflict, deprecation, and support rules | Not met; governance requirements are draft only |
+| Missing, ambiguous, expired, or invalid entries fail closed | Structural and fixture behavior exists; approval evidence is absent |
+
+### Missing Evidence, Decisions, and Approvers
+
+- Evidence: versioned catalog bytes, entry provenance, catalog SHA-256 or signature,
+  per-entry platform/generation scope, safety review, and support-window evidence.
+- Decisions: provider role, conflict resolution, deprecation, review cadence,
+  integrity mechanism, and unsupported-entry behavior.
+- Missing approvers: named independent security reviewer and named repository
+  maintainer reviewer who is separate from the accountable owner role.
+- External reviewer roles: supply-chain/integrity reviewer and package-mapping
+  safety reviewer.
+
+### Stop Conditions
+
+- Stop if any requested mapping is absent, ambiguous, unsupported, expired, or
+  integrity-invalid.
+- Stop if a mapping is inferred from source, tests, fixtures, a provider name, or
+  another platform/generation.
+- Stop until both required external roles sign this record separately.
+
+## EV-OMARCHY-COMMAND-POLICY-v0.1.0
+
+| Field | Value |
+|---|---|
+| Status | `unapproved` |
+| Accountable owner | `kattsushi` |
+| Accepted role | Omarchy Policy Owner, explicitly accepted by `kattsushi` in [issue #34 comment 5199374901](https://github.com/kattsushi/omarchy-supplement/issues/34#issuecomment-5199374901); distinct from the coordinator-only acceptance in [comment 5199220193](https://github.com/kattsushi/omarchy-supplement/issues/34#issuecomment-5199220193) |
+| Approval effect | None; separate sign-off is required |
+
+### Evidence
+
+| Reference | Strength | What it establishes | What it does not establish |
+|---|---|---|---|
+| [Omarchy command type](https://github.com/kattsushi/omarchy-supplement/blob/e0543f330dda46680ecd18eb394ffbeb613200a9/packages/workstation-orchestrator/src/application/ports/package-execution.ts#L12-L16) | structural | Closed scaffolded argv shapes | A supported native command |
+| [Fixture generation parser](https://github.com/kattsushi/omarchy-supplement/blob/e0543f330dda46680ecd18eb394ffbeb613200a9/packages/workstation-orchestrator/src/infrastructure/platform/fixtures.ts#L20-L63) | fixture | Fixture-only generation classification | Native version or capability evidence |
+| [Fixture parser tests](https://github.com/kattsushi/omarchy-supplement/blob/e0543f330dda46680ecd18eb394ffbeb613200a9/packages/workstation-orchestrator/tests/infrastructure/fixture-parsers.test.ts#L7-L19) | fixture | Known/unknown fixture classification | Omarchy 3.x or 4.x execution support |
+| [Sandbox exact-argv test](https://github.com/kattsushi/omarchy-supplement/blob/e0543f330dda46680ecd18eb394ffbeb613200a9/packages/workstation-orchestrator/tests/integration/provider-execution-sandbox.test.ts#L73-L92) | fixture | Isolated fake executable receives exact fixture argv | A native Omarchy result |
+| [Omarchy policy requirement](https://github.com/kattsushi/omarchy-supplement/blob/e0543f330dda46680ecd18eb394ffbeb613200a9/packages/workstation-orchestrator/EXECUTION-GOVERNANCE.md#L58-L68) | policy draft | Matching evidence and 4.x unavailability rule | An approved command policy |
+| [Production provider port](https://github.com/kattsushi/omarchy-supplement/blob/e0543f330dda46680ecd18eb394ffbeb613200a9/packages/workstation-orchestrator/src/composition/mutation.ts#L16-L26) | unavailable | Real Omarchy execution stays typed-unavailable | Production execution authority |
+
+### Acceptance-Criteria Mapping
+
+| Criterion | Current state |
+|---|---|
+| Exact version/generation/platform/architecture match | Not met; native evidence is unavailable |
+| Exact reviewed argv per capability | Not met; structural and fixture shapes are not policy approval |
+| Binary provenance, support window, and read-only discovery | Not met |
+| Omarchy 4.x remains unavailable without matching evidence | Met as a blocking policy; activation remains unapproved |
+
+### Missing Evidence, Decisions, and Approvers
+
+- Evidence: native host/runner identity, architecture, exact Omarchy and binary
+  versions, capability-specific read-only discovery, exact native argv/result,
+  binary provenance, date, and reproducible evidence digest.
+- Decisions: supported generation/version ranges, exact capability-to-argv policy,
+  non-interactive behavior, prompt/network/privilege bounds, and support expiry.
+- Missing approvers: named Omarchy capability maintainer and named independent
+  security command-policy reviewer.
+- External reviewer roles: Omarchy release/capability reviewer and command-execution
+  security reviewer.
+
+### Stop Conditions
+
+- Stop on fixture-only, structural, cross-generation, nominal-version, stale, or
+  integrity-unverifiable evidence.
+- Stop all Omarchy 4.x activation until matching native evidence and separate
+  command-policy sign-off exist.
+- Stop until both required external roles sign this record separately.
+
+## EV-HOMEBREW-COMMAND-POLICY-v0.1.0
+
+| Field | Value |
+|---|---|
+| Status | `unapproved` |
+| Accountable owner | `kattsushi` |
+| Accepted role | Homebrew Policy Owner, explicitly accepted by `kattsushi` in [issue #34 comment 5199374901](https://github.com/kattsushi/omarchy-supplement/issues/34#issuecomment-5199374901); distinct from the coordinator-only acceptance in [comment 5199220193](https://github.com/kattsushi/omarchy-supplement/issues/34#issuecomment-5199220193) |
+| Approval effect | None; separate sign-off is required |
+
+### Evidence
+
+| Reference | Strength | What it establishes | What it does not establish |
+|---|---|---|---|
+| [Homebrew command type](https://github.com/kattsushi/omarchy-supplement/blob/e0543f330dda46680ecd18eb394ffbeb613200a9/packages/workstation-orchestrator/src/application/ports/package-execution.ts#L17-L22) | structural | Closed scaffolded `brew install` argv shape | A supported native command |
+| [Fixture Homebrew discovery](https://github.com/kattsushi/omarchy-supplement/blob/e0543f330dda46680ecd18eb394ffbeb613200a9/packages/workstation-orchestrator/src/infrastructure/platform/fixtures.ts#L69-L100) | fixture | Fixture-only macOS capability descriptions | Native Homebrew capability evidence |
+| [Fixture discovery tests](https://github.com/kattsushi/omarchy-supplement/blob/e0543f330dda46680ecd18eb394ffbeb613200a9/packages/workstation-orchestrator/tests/infrastructure/fixture-parsers.test.ts#L21-L28) | fixture | Fixtures never create an execution capability | Native package acquisition behavior |
+| [Sandbox exact-argv test](https://github.com/kattsushi/omarchy-supplement/blob/e0543f330dda46680ecd18eb394ffbeb613200a9/packages/workstation-orchestrator/tests/integration/provider-execution-sandbox.test.ts#L73-L92) | fixture | Isolated fake executable receives exact fixture argv | A native Homebrew result |
+| [Homebrew decision requirement](https://github.com/kattsushi/omarchy-supplement/blob/e0543f330dda46680ecd18eb394ffbeb613200a9/packages/workstation-orchestrator/EXECUTION-GOVERNANCE.md#L124-L136) | policy draft | Primary/fallback evidence and no-silent-switch requirement | An approved Homebrew policy |
+| [Production provider port](https://github.com/kattsushi/omarchy-supplement/blob/e0543f330dda46680ecd18eb394ffbeb613200a9/packages/workstation-orchestrator/src/composition/mutation.ts#L16-L26) | unavailable | Real Homebrew execution stays typed-unavailable | Production execution authority |
+
+### Acceptance-Criteria Mapping
+
+| Criterion | Current state |
+|---|---|
+| Exact platform/architecture/Homebrew version match | Not met; native evidence is unavailable |
+| Formula/cask capability and exact reviewed argv | Not met; fixture descriptions are non-authorizing |
+| Primary/fallback role and explicit opt-in | Structural planning exists; production policy approval is absent |
+| Binary provenance and support window | Not met |
+
+### Missing Evidence, Decisions, and Approvers
+
+- Evidence: native macOS and approved Linux-fallback matrices, architecture, exact
+  Homebrew/binary versions, formula/cask discovery, exact native argv/result,
+  package identity, provenance, date, and reproducible evidence digest.
+- Decisions: supported platforms and versions, formula/cask policy, primary versus
+  fallback role, opt-in scope, prompt/network behavior, and support expiry.
+- Missing approvers: named Homebrew platform/capability maintainer and named
+  independent security command-policy reviewer.
+- External reviewer roles: Homebrew platform reviewer and command-execution security
+  reviewer.
+
+### Stop Conditions
+
+- Stop on fixture-only, structural, cross-platform, stale, or integrity-unverifiable
+  evidence.
+- Stop if fallback can be silent, Homebrew can be installed automatically, or the
+  package role is ambiguous.
+- Stop until both required external roles sign this record separately.
+
+## EV-ACQUISITION-VERIFICATION-v0.1.0
+
+| Field | Value |
+|---|---|
+| Status | `unapproved` |
+| Accountable owner | `kattsushi` |
+| Accepted role | Product Policy Owner, explicitly accepted by `kattsushi` in [issue #34 comment 5199374901](https://github.com/kattsushi/omarchy-supplement/issues/34#issuecomment-5199374901); distinct from the coordinator-only acceptance in [comment 5199220193](https://github.com/kattsushi/omarchy-supplement/issues/34#issuecomment-5199220193) |
+| Approval effect | None; separate sign-off is required |
+
+### Evidence
+
+| Reference | Strength | What it establishes | What it does not establish |
+|---|---|---|---|
+| [Verification port and outcomes](https://github.com/kattsushi/omarchy-supplement/blob/e0543f330dda46680ecd18eb394ffbeb613200a9/packages/workstation-orchestrator/src/application/ports/package-execution.ts#L7-L10) | structural | Bounded provider report categories | Verification policy or threshold |
+| [Verification service boundary](https://github.com/kattsushi/omarchy-supplement/blob/e0543f330dda46680ecd18eb394ffbeb613200a9/packages/workstation-orchestrator/src/application/ports/package-execution.ts#L61-L66) | structural | Verification is a separate required capability | An approved verifier |
+| [Outcome handling](https://github.com/kattsushi/omarchy-supplement/blob/e0543f330dda46680ecd18eb394ffbeb613200a9/packages/workstation-orchestrator/src/application/services/package-execution.ts#L114-L127) | structural | Non-provider-reported outcomes require reassessment | Correct native acquisition verification |
+| [Outcome matrix tests](https://github.com/kattsushi/omarchy-supplement/blob/e0543f330dda46680ecd18eb394ffbeb613200a9/packages/workstation-orchestrator/tests/application/package-execution.test.ts#L154-L170) | fixture | Deterministic outcome-strength separation | Native baseline or post-effect proof |
+| [Sandbox bounded outcomes](https://github.com/kattsushi/omarchy-supplement/blob/e0543f330dda46680ecd18eb394ffbeb613200a9/packages/workstation-orchestrator/tests/integration/provider-execution-sandbox.test.ts#L94-L109) | fixture | Fake partial/failure/timeout/malformed outcomes do not mutate a sentinel | Native provider or workstation state |
+| [Verification requirements](https://github.com/kattsushi/omarchy-supplement/blob/e0543f330dda46680ecd18eb394ffbeb613200a9/packages/workstation-orchestrator/EXECUTION-GOVERNANCE.md#L70-L76) | policy draft | Baseline, threshold, freshness, and independence requirements | An approved verification policy |
+| [Production verifier](https://github.com/kattsushi/omarchy-supplement/blob/e0543f330dda46680ecd18eb394ffbeb613200a9/packages/workstation-orchestrator/src/composition/mutation.ts#L16-L26) | unavailable | Production verification stays typed-unavailable | Independently verified acquisition |
+
+### Acceptance-Criteria Mapping
+
+| Criterion | Current state |
+|---|---|
+| Provider/capability-specific pre-effect baseline | Not met |
+| Independent post-effect checks and success threshold | Not met |
+| Partial, unknown, timeout, and truncation policy | Draft requirements and fixture behavior only |
+| Freshness, evidence limits, and reassessment rules | Not met |
+| Provider exit success cannot imply independent verification | Structural boundary exists; policy approval is absent |
+
+### Missing Evidence, Decisions, and Approvers
+
+- Evidence: provider/capability baseline and post-check matrix, native observations,
+  independence proof, threshold rationale, freshness timestamps, truncation/timeout
+  cases, maximum evidence size, and reproducible evidence digests.
+- Decisions: success/partial/unverifiable thresholds, allowed outcome per threshold,
+  freshness window, independence rule, evidence size, and reassessment behavior.
+- Missing approvers: named product evidence-policy reviewer, named independent
+  verification reviewer, and named security reviewer.
+- External reviewer roles: acquisition-evidence method reviewer, provider-specific
+  verification reviewer, and security reviewer.
+
+### Stop Conditions
+
+- Stop if provider exit success, source shape, tests, fixtures, or sandbox output is
+  treated as independent native acquisition verification.
+- Stop on missing baseline, non-independent checks, stale/oversized evidence, unclear
+  thresholds, partial/unknown promotion, or unresolved timeout/truncation behavior.
+- Stop until all three required external roles sign this record separately.
+
+## Integrity Index
+
+SHA-256 values cover the committed blob bytes at base revision `e0543f330dda46680ecd18eb394ffbeb613200a9`.
+
+| Committed file | SHA-256 |
+|---|---|
+| `packages/workstation-orchestrator/EXECUTION-GOVERNANCE.md` | `4ee52b9312318ece026129a976fb5353623226b84f44cb26b24342e1ba67c171` |
+| `packages/workstation-orchestrator/src/application/ports/package-execution.ts` | `0bcfe714ed80ec52b697a1c1cd122553b6885957d6dec1da92dc195a4b0057f5` |
+| `packages/workstation-orchestrator/src/application/services/package-execution.ts` | `92f69dc462d3c8ab89766ca4f50136a3cfe29d16b31674a471fb4846eb6bf00b` |
+| `packages/workstation-orchestrator/src/infrastructure/platform/fixtures.ts` | `f4c417ee603a78712224319bc872d6c4e5a3062b7d7cab4c0b76264d103d75d5` |
+| `packages/workstation-orchestrator/src/infrastructure/providers/sandboxed-package-execution.ts` | `5e5cdfc85af5b36a5acf354ec7be17868a1c75be7c450dfc6fe4b7906490c085` |
+| `packages/workstation-orchestrator/src/composition/mutation.ts` | `ce27e03a4b042da636ebdc6a7cc22c321aa1e60c6c1aa5f553206b72f696c206` |
+| `packages/workstation-orchestrator/tests/application/package-execution.test.ts` | `15b2d1b8a37dc2695b55f3ec7c83aab132c4d56952c6f8ee979675fa689e583c` |
+| `packages/workstation-orchestrator/tests/infrastructure/fixture-parsers.test.ts` | `83893c4f9cbccd940d10fa295bec7535e112dd33e1cbd2fa4b6f08ee3e167cdc` |
+| `packages/workstation-orchestrator/tests/integration/provider-execution-sandbox.test.ts` | `c242493df72a6fcb80c2310e8e969664c47ac99e02272edc7473e29a00be1add` |
+| `packages/workstation-orchestrator/tests/privacy/package-execution-boundaries.test.ts` | `0e29b2c47433e1d7fe14cd7fe6f93671b1ec4f8ecea9f8cc7b5c89079047fa3f` |
+
+## Blocking State
+
+- Task 9A.1 is blocked: all four records are `unapproved`, required native evidence
+  is unavailable, and separate sign-offs are missing.
+- Task 9B is blocked behind Task 9A.1 and its own configuration evidence,
+  confirmation, backup, ownership, and mutation-scope decisions.
+- Final whole-change `sdd-verify` is blocked until all required tasks, evidence,
+  decisions, external reviews, and separate sign-offs are complete.
+
+This inventory is passive structural documentation under ordinary repository policy.
+It creates no RDD attempt, receipt, review authority, approval, or execution path.
