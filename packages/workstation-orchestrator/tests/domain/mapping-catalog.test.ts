@@ -1,4 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
+import { readFile } from "node:fs/promises";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
@@ -19,16 +20,19 @@ import { draftMappingCatalog } from "../../src/infrastructure/mappings/draft-map
 
 const now = new Date("2026-08-10T00:00:00.000Z");
 const programId = Schema.decodeUnknownSync(ProgramId)("program:neovim");
-const scope = { programId, provider: "homebrew" as const, providerRole: "primary" as const };
+const scope = { programId, platform: "macos" as const, architecture: "arm64", omarchyGeneration: "unknown" as const,
+  provider: "homebrew" as const, providerVersion: "4.6.0", providerRole: "primary" as const, capabilityId: "homebrew-formula" };
+const mappingContext = { platform: scope.platform, architecture: scope.architecture, omarchyGeneration: scope.omarchyGeneration,
+  providerVersion: scope.providerVersion, providerRole: scope.providerRole, capabilityId: scope.capabilityId };
 const sha = "a".repeat(64);
 const provenance = { repository: "https://example.test/repo", commitSha: sha, artifactSha256: sha, fixture: false } as const;
 const lifecycle = { effectiveFrom: "2026-08-01T00:00:00.000Z", reviewBy: "2026-09-01T00:00:00.000Z", supportedUntil: "2026-10-01T00:00:00.000Z" };
 const entry: MappingCatalogEntry = {
-  id: "mapping:neovim-homebrew", version: "1.0.0", status: "approved", owner: "mapping-owner", scope,
+  id: "mapping:neovim-homebrew", version: "1.0.0", status: "approved", owner: "mapping-owner", preparer: "mapping-preparer", scope,
   safety: "reviewed-safe", mapping: { mappingId: "mapping:neovim-homebrew", packageName: "neovim", safe: true, alreadyPresent: false },
   approvals: [
-    { role: "security", approver: "security-reviewer", decision: "approved", decidedAt: "2026-08-02T00:00:00.000Z" },
-    { role: "provider-policy", approver: "provider-reviewer", decision: "approved", decidedAt: "2026-08-02T00:00:00.000Z" },
+    { role: "security", approver: "security-reviewer", decision: "approved", decidedAt: "2026-08-02T00:00:00.000Z", signoffRef: `sha256:${sha}` },
+    { role: "provider-policy", approver: "provider-reviewer", decision: "approved", decidedAt: "2026-08-02T00:00:00.000Z", signoffRef: `sha256:${sha}` },
   ],
   provenance, lifecycle, supersedes: [],
 };
@@ -58,6 +62,14 @@ describe("mapping catalog", () => {
 
   it.each([
     ["owner self-approval", { ...entry, approvals: [{ ...entry.approvals[0]!, approver: entry.owner }, entry.approvals[1]!] }],
+    ["catalog-owner self-approval", { ...entry, approvals: [{ ...entry.approvals[0]!, approver: "catalog-owner" }, entry.approvals[1]!] }],
+    ["preparer self-approval", { ...entry, approvals: [{ ...entry.approvals[0]!, approver: entry.preparer! }, entry.approvals[1]!] }],
+    ["blank reviewer", { ...entry, approvals: [{ ...entry.approvals[0]!, approver: " " }, entry.approvals[1]!] }],
+    ["invalid approval timestamp", { ...entry, approvals: [{ ...entry.approvals[0]!, decidedAt: "not-a-date" }, entry.approvals[1]!] }],
+    ["empty approval timestamp", { ...entry, approvals: [{ ...entry.approvals[0]!, decidedAt: "" }, entry.approvals[1]!] }],
+    ["blank sign-off reference", { ...entry, approvals: [{ ...entry.approvals[0]!, signoffRef: " " }, entry.approvals[1]!] }],
+    ["mutable sign-off reference", { ...entry, approvals: [{ ...entry.approvals[0]!, signoffRef: "signoff:latest" }, entry.approvals[1]!] }],
+    ["rejected decision", { ...entry, approvals: [{ ...entry.approvals[0]!, decision: "rejected" as const }, entry.approvals[1]!] }],
     ["one reviewer filling both roles", { ...entry, approvals: [entry.approvals[0]!, { ...entry.approvals[1]!, approver: entry.approvals[0]!.approver }] }],
     ["missing provenance", { ...entry, provenance: undefined }],
     ["fixture provenance", { ...entry, provenance: { ...provenance, fixture: true } }],
@@ -72,11 +84,34 @@ describe("mapping catalog", () => {
   });
 
   it.each([
-    ["scope mismatch", { scope: { ...scope, programId: Schema.decodeUnknownSync(ProgramId)("program:other") } }],
+    ["program", { ...scope, programId: Schema.decodeUnknownSync(ProgramId)("program:other") }],
+    ["platform", { ...scope, platform: "linux" as const }],
+    ["architecture", { ...scope, architecture: "x86_64" }],
+    ["generation", { ...scope, omarchyGeneration: "omarchy-4" as const }],
+    ["provider", { ...scope, provider: "omarchy" as const }],
+    ["provider version", { ...scope, providerVersion: "4.5.0" }],
+    ["provider role", { ...scope, providerRole: "fallback" as const }],
+    ["capability", { ...scope, capabilityId: "other-capability" }],
+  ])("rejects %s scope mismatch", async (_name, candidateScope) => {
+    expect((await resolveMappingCatalogEntry(await signed({}, [{ ...entry, scope: candidateScope }]), scope, now)).available).toBe(false);
+  });
+
+  it.each([
     ["expired support", { lifecycle: { ...lifecycle, supportedUntil: "2026-08-09T00:00:00.000Z" } }],
     ["overdue review", { lifecycle: { ...lifecycle, reviewBy: "2026-08-09T00:00:00.000Z" } }],
   ])("rejects %s", async (_name, change) => {
     expect((await resolveMappingCatalogEntry(await signed({}, [{ ...entry, ...change }]), scope, now)).available).toBe(false);
+  });
+
+  it.each([
+    ["before effective", { ...lifecycle, effectiveFrom: "2026-08-11T00:00:00.000Z" }],
+    ["expired", { ...lifecycle, supportedUntil: "2026-08-09T00:00:00.000Z" }],
+  ])("rejects catalog lifecycle when %s", async (_name, catalogLifecycle) => {
+    expect((await resolveMappingCatalogEntry(await signed({ lifecycle: catalogLifecycle }), scope, now)).available).toBe(false);
+  });
+
+  it.each([undefined, { ...provenance, fixture: true }])("rejects invalid catalog provenance", async (catalogProvenance) => {
+    expect((await resolveMappingCatalogEntry(await signed({ provenance: catalogProvenance }), scope, now)).available).toBe(false);
   });
 
   it("fails closed instead of selecting between duplicate eligible entries", async () => {
@@ -86,6 +121,11 @@ describe("mapping catalog", () => {
 });
 
 describe("catalog mapping adapter", () => {
+  it("adapts one entry only with the injected exact environment context", async () => {
+    const port = makeCatalogMappingPort(await signed(), () => mappingContext, () => now);
+    await expect(Effect.runPromise(port.map(programId, "homebrew"))).resolves.toMatchObject({ mappingId: entry.mapping.mappingId });
+  });
+
   it.effect("keeps draft mappings typed-unavailable so planning cannot produce a plan", () => Effect.gen(function*() {
     const planner = yield* PlanPackageAcquisition;
     const result = yield* planner.plan({ programId, fallbackOptIn: false, binding: binding }).pipe(Effect.flip);
@@ -95,9 +135,14 @@ describe("catalog mapping adapter", () => {
     Layer.mergeAll(
       Layer.succeed(PlatformFactsPort, { facts: Effect.succeed({ platform: "macos" as const, generation: "unknown" as const, observationDigest: "platform:macos", evidence: [] }) }),
       Layer.succeed(ProviderDiscoveryPort, { discover: (provider) => Effect.succeed({ provider, availability: "present", observedVersion: "1", capabilities: [], evidence: [] }) }),
-      Layer.succeed(PackageMappingPort, makeCatalogMappingPort(draftMappingCatalog, () => "primary", () => now)),
+      Layer.succeed(PackageMappingPort, makeCatalogMappingPort(draftMappingCatalog, () => mappingContext, () => now)),
     ),
   ))));
+
+  it("keeps the catalog and adapter out of production composition", async () => {
+    const sources = await Promise.all(["read-only.ts", "mutation.ts"].map((file) => readFile(new URL(`../../src/composition/${file}`, import.meta.url), "utf8")));
+    expect(sources.join("\n")).not.toMatch(/draftMappingCatalog|makeCatalogMappingPort|catalog-mapping-port/);
+  });
 });
 
 const binding = {

@@ -1,5 +1,5 @@
 import type { SafePackageMapping } from "../application/ports/workstation.js";
-import type { ProgramId, ProviderId, ProviderRole } from "./states.js";
+import type { OmarchyGeneration, Platform, ProgramId, ProviderId, ProviderRole } from "./states.js";
 
 export type MappingCatalogStatus = "draft" | "in-review" | "approved" | "rejected" | "deprecated" | "superseded";
 export type MappingApprovalRole = "security" | "provider-policy";
@@ -9,6 +9,7 @@ export interface MappingApproval {
   readonly approver: string;
   readonly decision: "approved" | "rejected";
   readonly decidedAt: string;
+  readonly signoffRef: string;
 }
 
 export interface MappingProvenance {
@@ -29,10 +30,16 @@ export interface MappingCatalogEntry {
   readonly version: string;
   readonly status: MappingCatalogStatus;
   readonly owner: string;
+  readonly preparer?: string;
   readonly scope: {
     readonly programId: ProgramId;
+    readonly platform: Platform;
+    readonly architecture: string;
+    readonly omarchyGeneration: OmarchyGeneration;
     readonly provider: ProviderId;
+    readonly providerVersion: string;
     readonly providerRole: ProviderRole;
+    readonly capabilityId: string;
   };
   readonly safety: "candidate" | "reviewed-safe" | "unsafe";
   readonly mapping: SafePackageMapping;
@@ -71,8 +78,12 @@ export type MappingCatalogResolution =
   | { readonly available: false; readonly reason: MappingCatalogUnavailableReason };
 
 const sha256Pattern = /^[a-f0-9]{64}$/;
+const immutableSignoffPattern = /^sha256:[a-f0-9]{64}$/;
 const semanticVersionPattern = /^\d+\.\d+\.\d+$/;
 const requiredApprovalRoles = ["security", "provider-policy"] as const;
+const scopeKeys: readonly (keyof MappingCatalogEntry["scope"])[] = [
+  "programId", "platform", "architecture", "omarchyGeneration", "provider", "providerVersion", "providerRole", "capabilityId",
+];
 
 export function canonicalMappingCatalogPayload(catalog: MappingCatalog): string {
   const { digest: _digest, ...payload } = catalog;
@@ -100,8 +111,9 @@ export async function resolveMappingCatalogEntry(
   if (!validProvenance(catalog.provenance)) return unavailable("provenance-invalid");
   if (!current(catalog.lifecycle, now)) return unavailable("outside-support-window");
 
-  const exact = catalog.entries.filter((entry) => entry.scope.programId === scope.programId
-    && entry.scope.provider === scope.provider && entry.scope.providerRole === scope.providerRole);
+  if (!validScope(scope)) return unavailable("scope-mismatch");
+  const exact = catalog.entries.filter((entry) => validScope(entry.scope)
+    && scopeKeys.every((key) => entry.scope[key] === scope[key]));
   if (exact.length === 0) return unavailable("scope-mismatch");
 
   const eligible = exact.filter((entry) => entry.status === "approved"
@@ -125,9 +137,16 @@ const validProvenance = (value?: MappingProvenance) => value !== undefined && !v
   && value.repository.length > 0 && sha256Pattern.test(value.commitSha) && sha256Pattern.test(value.artifactSha256);
 const validApprovals = (catalog: MappingCatalog, entry: MappingCatalogEntry) => {
   const approvals = requiredApprovalRoles.map((role) => entry.approvals.find((approval) => approval.role === role && approval.decision === "approved"));
-  return approvals.every((approval) => approval !== undefined && approval.approver !== entry.owner && approval.approver !== catalog.owner)
+  return nonblank(catalog.owner) && nonblank(entry.owner)
+    && (entry.preparer === undefined || nonblank(entry.preparer)) && entry.approvals.length === requiredApprovalRoles.length
+    && approvals.every((approval) => approval !== undefined && nonblank(approval.approver)
+      && approval.approver !== entry.owner && approval.approver !== entry.preparer && approval.approver !== catalog.owner
+      && immutableSignoffPattern.test(approval.signoffRef) && validIsoTimestamp(approval.decidedAt))
     && new Set(approvals.map((approval) => approval?.approver)).size === requiredApprovalRoles.length;
 };
+const nonblank = (value: unknown): value is string => typeof value === "string" && value.trim().length > 0;
+const validIsoTimestamp = (value: unknown) => nonblank(value) && Number.isFinite(Date.parse(value)) && new Date(value).toISOString() === value;
+const validScope = (scope: MappingCatalogEntry["scope"]) => scopeKeys.every((key) => nonblank(scope[key]));
 const current = (window: MappingLifecycle, now: Date) => {
   const effective = Date.parse(window.effectiveFrom);
   const review = Date.parse(window.reviewBy);
