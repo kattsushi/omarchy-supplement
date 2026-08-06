@@ -13,8 +13,9 @@ and is not evidence validation, approver sign-off, or authority to run `omarchy`
 Governance decision records in `EXECUTION-GOVERNANCE.md` remain unresolved.
 
 Base evidence revision: [`e0543f330dda46680ecd18eb394ffbeb613200a9`](https://github.com/kattsushi/omarchy-supplement/commit/e0543f330dda46680ecd18eb394ffbeb613200a9).
-All source and test references in this inventory are immutable links at that revision.
-Source, tests, and fixtures make no native-environment claim.
+Unless a record identifies a later candidate revision, source and test references are
+immutable links at that base revision. Source, tests, and fixtures make no
+native-environment claim.
 
 ## Review Path
 
@@ -50,28 +51,34 @@ Source, tests, and fixtures make no native-environment claim.
 
 | Reference | Strength | What it establishes | What it does not establish |
 |---|---|---|---|
+| [PR #36](https://github.com/kattsushi/omarchy-supplement/pull/36) and [feature commit `2884b54d34ba09f1ad2a3a26c33ff972025c33a9`](https://github.com/kattsushi/omarchy-supplement/commit/2884b54d34ba09f1ad2a3a26c33ff972025c33a9) | delivery context | An empty versioned draft catalog and structural contract were delivered as a feature candidate | Merge, approval, production activation, or a supported mapping entry |
 | [Catalog requirements](https://github.com/kattsushi/omarchy-supplement/blob/e0543f330dda46680ecd18eb394ffbeb613200a9/packages/workstation-orchestrator/EXECUTION-GOVERNANCE.md#L50-L56) | policy draft | Required catalog fields and fail-closed intent | An approved catalog or entry |
-| [Plan mapping guards](https://github.com/kattsushi/omarchy-supplement/blob/e0543f330dda46680ecd18eb394ffbeb613200a9/packages/workstation-orchestrator/src/application/services/package-execution.ts#L50-L55) | structural | Scaffolding rejects missing mappings and unsupported batch shape | Mapping correctness, provenance, or support |
-| [Mapping refusal tests](https://github.com/kattsushi/omarchy-supplement/blob/e0543f330dda46680ecd18eb394ffbeb613200a9/packages/workstation-orchestrator/tests/application/package-execution.test.ts#L101-L113) | fixture | Deterministic missing-mapping refusal | Native package identity or provider behavior |
-| [Production mapping port](https://github.com/kattsushi/omarchy-supplement/blob/e0543f330dda46680ecd18eb394ffbeb613200a9/packages/workstation-orchestrator/src/composition/mutation.ts#L16-L26) | unavailable | Production mapping evidence fails typed-unavailable | Any production mapping authority |
+| [Catalog contract and resolver](https://github.com/kattsushi/omarchy-supplement/blob/2884b54d34ba09f1ad2a3a26c33ff972025c33a9/packages/workstation-orchestrator/src/domain/mapping-catalog.ts#L5-L167) | structural | Catalog-level SHA-256 integrity; lifecycle and status gating; required independent security and provider-policy approvals; canonical identities and self-approval rejection; exact closed-scope runtime validation; provenance and support windows; ambiguity fails closed | Reviewer authenticity, native mapping provenance, or correctness of any provider mapping |
+| [Catalog mapping adapter](https://github.com/kattsushi/omarchy-supplement/blob/2884b54d34ba09f1ad2a3a26c33ff972025c33a9/packages/workstation-orchestrator/src/infrastructure/mappings/catalog-mapping-port.ts#L6-L22) | structural | Resolution uses an injected exact runtime context and converts every unavailable result into typed mapping unavailability | A trusted immutable production context resolver or production wiring |
+| [Empty draft catalog](https://github.com/kattsushi/omarchy-supplement/blob/2884b54d34ba09f1ad2a3a26c33ff972025c33a9/packages/workstation-orchestrator/src/infrastructure/mappings/draft-mapping-catalog.ts#L3-L16) | structural | Version `0.1.0` is `draft`, has valid catalog-level integrity, requires both approval roles, and contains no entries | Any logical-to-provider mapping, native provenance, review, sign-off, or approval |
+| [Mapping catalog tests](https://github.com/kattsushi/omarchy-supplement/blob/2884b54d34ba09f1ad2a3a26c33ff972025c33a9/packages/workstation-orchestrator/tests/domain/mapping-catalog.test.ts#L49-L171) | fixture | The structural rules above are tested; the empty draft cannot produce a plan, and the catalog and adapter remain outside production composition | Native provider behavior, external review, production activation, or governance approval |
+| Ordinary candidate verification | structural | At feature commit `2884b54d34ba09f1ad2a3a26c33ff972025c33a9`, 6 test files / 81 tests passed, typecheck passed, and `git diff --check` passed | An RDD receipt, governance approval, native execution evidence, or reviewer sign-off |
 
 ### Acceptance-Criteria Mapping
 
 | Criterion | Current state |
 |---|---|
-| Versioned catalog with scoped logical-to-provider entries | Not met; no catalog artifact exists |
-| Provenance and integrity mechanism | Not met; no catalog signature or digest policy exists |
-| Ownership, conflict, deprecation, and support rules | Not met; governance requirements are draft only |
-| Missing, ambiguous, expired, or invalid entries fail closed | Structural and fixture behavior exists; approval evidence is absent |
+| Versioned catalog with scoped logical-to-provider entries | Partially met; an empty versioned draft catalog and scoped structural contract exist, but no logical-to-provider mapping entries exist |
+| Provenance and integrity mechanism | Partially met; catalog-level SHA-256 integrity and required non-fixture provenance fields are implemented and tested, but no supported entry or native mapping provenance exists |
+| Ownership, approval, conflict, deprecation, and support rules | Structurally implemented and tested; required external reviewers and immutable sign-offs are absent, and reviewer authenticity remains governance-owned |
+| Missing, ambiguous, expired, or invalid entries fail closed | Structurally implemented and tested; the empty draft is unavailable and cannot produce a plan |
+| Production composition and activation | Blocked; the catalog adapter is not wired into production, a trusted immutable production context resolver is absent, and production mapping remains typed-unavailable |
 
 ### Missing Evidence, Decisions, and Approvers
 
-- Evidence: versioned catalog bytes, entry provenance, catalog SHA-256 or signature,
-  per-entry platform/generation scope, safety review, and support-window evidence.
-- Decisions: provider role, conflict resolution, deprecation, review cadence,
-  integrity mechanism, and unsupported-entry behavior.
-- Missing approvers: named independent security reviewer and named repository
-  maintainer reviewer who is separate from the accountable owner role.
+- Evidence: supported logical-to-provider entries, native mapping provenance,
+  per-entry safety review, and native support-window evidence.
+- Production integration: a trusted immutable production context resolver is not
+  wired, the catalog adapter remains outside production composition, and production
+  activation remains blocked.
+- Missing approvers and sign-offs: named independent security and provider-policy
+  reviewers, their immutable sign-offs, and governance-owned reviewer-authenticity
+  validation are absent.
 - External reviewer roles: supply-chain/integrity reviewer and package-mapping
   safety reviewer.
 
@@ -234,7 +241,10 @@ Source, tests, and fixtures make no native-environment claim.
 
 ## Integrity Index
 
-SHA-256 values cover the committed blob bytes at base revision `e0543f330dda46680ecd18eb394ffbeb613200a9`.
+The first table covers committed blob bytes at base revision
+`e0543f330dda46680ecd18eb394ffbeb613200a9`. The mapping-catalog table covers
+committed blob bytes at feature candidate revision
+`2884b54d34ba09f1ad2a3a26c33ff972025c33a9`. All values are lowercase SHA-256.
 
 | Committed file | SHA-256 |
 |---|---|
@@ -248,6 +258,13 @@ SHA-256 values cover the committed blob bytes at base revision `e0543f330dda4668
 | `packages/workstation-orchestrator/tests/infrastructure/fixture-parsers.test.ts` | `83893c4f9cbccd940d10fa295bec7535e112dd33e1cbd2fa4b6f08ee3e167cdc` |
 | `packages/workstation-orchestrator/tests/integration/provider-execution-sandbox.test.ts` | `c242493df72a6fcb80c2310e8e969664c47ac99e02272edc7473e29a00be1add` |
 | `packages/workstation-orchestrator/tests/privacy/package-execution-boundaries.test.ts` | `0e29b2c47433e1d7fe14cd7fe6f93671b1ec4f8ecea9f8cc7b5c89079047fa3f` |
+
+| Mapping-catalog candidate file | SHA-256 |
+|---|---|
+| `packages/workstation-orchestrator/src/domain/mapping-catalog.ts` | `0743972daffebb2e346bf376ad7fb910c0375cdc772244243c54fb80e77aa5c8` |
+| `packages/workstation-orchestrator/src/infrastructure/mappings/catalog-mapping-port.ts` | `ca2ad9c5a7502c7b13719c753dad90407dccd8fd4535cb18eb37a57446fde808` |
+| `packages/workstation-orchestrator/src/infrastructure/mappings/draft-mapping-catalog.ts` | `ad5607bf45e2c2372fab1744babd51002f82cd91d09994d6cb58fe745a00c272` |
+| `packages/workstation-orchestrator/tests/domain/mapping-catalog.test.ts` | `c4cf90778f0130ad642da5174337baac2acbdc98365922cd9173a1b12f719ca8` |
 
 ## Blocking State
 
