@@ -36,7 +36,7 @@ export type VerificationResolution = { readonly available: false; readonly struc
 
 const statuses = ["draft", "in-review", "approved", "rejected", "deprecated", "superseded"] as const;
 const roles = ["evidence-owner", "independent-verification-reviewer"] as const;
-const sha = /^[a-f0-9]{64}$/; const signoff = /^sha256:[a-f0-9]{64}$/; const semver = /^\d+\.\d+\.\d+$/; const id = /^[a-z][a-z0-9-]*:[a-z0-9._+-]+$/; const identity = /^identity:[a-z0-9._+-]+$/;
+const sha = /^[a-f0-9]{64}$/; const signoff = /^sha256:[a-f0-9]{64}$/; const semver = /^\d+\.\d+\.\d+$/; const id = /^[a-z][a-z0-9-]*:[a-z0-9._+-]+$/; const identity = /^identity:[a-z0-9._+-]+$/; const evidenceId = /^evidence:[a-z0-9._+-]+$/; const provenance = /^provenance:[a-z0-9._+-]+$/;
 const text = (value: unknown): value is string => typeof value === "string" && value.length > 0 && value === value.trim();
 const closed = <T extends string>(values: readonly T[], value: unknown): value is T => typeof value === "string" && values.includes(value as T);
 const time = (value: unknown): value is string => text(value) && Number.isFinite(Date.parse(value)) && new Date(value).toISOString() === value;
@@ -57,12 +57,12 @@ const validScope = (value: VerificationScope) => exact(value, ["provider", "capa
 const bindingKeys = ["planId", "requestId", "planBindingDigest", "commandDigest", "providerPolicyDigest", "mappingCatalogDigest", "mappingEntryDigest", "verificationPolicyDigest"] as const;
 const validBinding = (value: VerificationBinding) => exact(value, bindingKeys) && id.test(value.planId) && id.test(value.requestId) && bindingKeys.slice(2).every((key) => sha.test(value[key]));
 const validObservation = (value: VerificationObservation, entry: AcquisitionVerificationEntry, scopeDigest: string, now: Date) => exact(value, ["id", "phase", "observer", "planId", "requestId", "scopeDigest", "verificationPolicyDigest", "observedAt", "freshUntil", "source", "fixture", "provenanceRef", "provenanceDigest", "artifactSha256", "outputSha256", "sizeBytes", "packageState", "packageId", "version", "location"])
-  && id.test(value.id) && closed(["pre", "post"] as const, value.phase) && identity.test(value.observer) && value.observer !== entry.owner && value.observer !== entry.preparer
+  && evidenceId.test(value.id) && closed(["pre", "post"] as const, value.phase) && identity.test(value.observer) && value.observer !== entry.owner && value.observer !== entry.preparer
   && value.planId === entry.binding.planId && value.requestId === entry.binding.requestId && value.scopeDigest === scopeDigest && value.verificationPolicyDigest === entry.binding.verificationPolicyDigest
   && time(value.observedAt) && time(value.freshUntil) && Date.parse(value.observedAt) <= now.getTime() && now.getTime() <= Date.parse(value.freshUntil)
   && Date.parse(entry.lifecycle.effectiveFrom) <= Date.parse(value.observedAt) && Date.parse(value.freshUntil) <= Date.parse(entry.lifecycle.reviewBy) && Date.parse(value.freshUntil) <= Date.parse(entry.lifecycle.supportedUntil)
   && closed(["native", "fixture", "structural"] as const, value.source) && typeof value.fixture === "boolean" && value.fixture === (value.source !== "native")
-  && id.test(value.provenanceRef) && sha.test(value.provenanceDigest) && sha.test(value.artifactSha256) && sha.test(value.outputSha256) && Number.isSafeInteger(value.sizeBytes) && value.sizeBytes > 0
+  && provenance.test(value.provenanceRef) && sha.test(value.provenanceDigest) && sha.test(value.artifactSha256) && sha.test(value.outputSha256) && Number.isSafeInteger(value.sizeBytes) && value.sizeBytes > 0
   && closed(["absent", "present"] as const, value.packageState) && text(value.packageId) && text(value.version) && text(value.location);
 const entryKeys = ["id", "version", "status", "owner", "preparer", "approvals", "lifecycle", "supersedes", "supersededBy", "conflictsWith", "scope", "binding", "observations", "requestedPackageIds", "observedPackageIds", "expectedVersion", "observedVersion", "installationLocation", "sideEffects", "outcome", "completeness", "completenessThreshold", "evidenceCeilingBytes", "timedOut", "truncated", "providerDisagreement", "indeterminateWrites", "ambiguous", "reassessmentRequired", "retryEligible", "retryBudget", "automaticRollback", "guidanceRef", "recoveryRef", "auditId", "replayId", "retention", "privacy", "sanitizationRef"] as const;
 const validEntry = (entry: AcquisitionVerificationEntry, scopeDigest: string, now: Date) => exact(entry, entryKeys) && id.test(entry.id) && semver.test(entry.version) && closed(statuses, entry.status)
@@ -100,8 +100,8 @@ export async function resolveAcquisitionVerification(registry: AcquisitionVerifi
   const pre = entry.observations.find((observation) => observation.phase === "pre")!; const post = entry.observations.find((observation) => observation.phase === "post")!;
   const governance: readonly (readonly [string, string])[] = [[registry.owner, "product-policy-owner"], [entry.owner, "product-policy-owner"], ...[registry.preparer, entry.preparer].filter(Boolean).map((identity) => [identity, "preparer"] as const), ...[...registry.approvals, ...entry.approvals].map((approval) => [approval.reviewer, approval.role] as const)];
   const roleSets = new Map<string, Set<string>>(); for (const [identity, role] of governance) roleSets.set(identity, (roleSets.get(identity) ?? new Set()).add(role));
-  if ([...roleSets.values()].some((assigned) => assigned.size !== 1) || [pre.observer, post.observer, pre.provenanceRef, post.provenanceRef].some((identity) => roleSets.has(identity)) || pre.provenanceRef === post.provenanceRef || pre.provenanceDigest === post.provenanceDigest
-    || new Set([pre.artifactSha256, pre.outputSha256, post.artifactSha256, post.outputSha256]).size !== 4) return no("evidence-invalid");
+  if ([...roleSets.values()].some((assigned) => assigned.size !== 1) || [pre.observer, post.observer].some((identity) => roleSets.has(identity)) || pre.provenanceRef === post.provenanceRef
+    || new Set([pre.provenanceDigest, pre.artifactSha256, pre.outputSha256, post.provenanceDigest, post.artifactSha256, post.outputSha256]).size !== 6) return no("evidence-invalid");
   if (entry.outcome !== "success" || entry.timedOut || entry.truncated || entry.providerDisagreement || entry.indeterminateWrites || entry.ambiguous || entry.reassessmentRequired
     || entry.retryEligible || entry.retryBudget !== 0 || entry.conflictsWith.length > 0 || entry.sideEffects.length !== 1 || entry.sideEffects[0] !== "package-installed" || entry.completeness !== 1
     || entry.completenessThreshold <= 0 || entry.completeness < entry.completenessThreshold || entry.evidenceCeilingBytes <= 0 || bytes > entry.evidenceCeilingBytes

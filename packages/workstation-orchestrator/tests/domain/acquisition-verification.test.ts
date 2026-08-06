@@ -16,7 +16,7 @@ const scope = { provider: "homebrew", capabilityId: "homebrew-formula", platform
 const binding = { planId: "plan:synthetic", requestId: "request:synthetic", planBindingDigest: hash, commandDigest: hash, providerPolicyDigest: hash,
   mappingCatalogDigest: hash, mappingEntryDigest: hash, verificationPolicyDigest: hash };
 const scopeDigest = await acquisitionVerificationApprovalSubjectDigest(scope);
-const observation = (phase: "pre" | "post", observer: string, observedAt: string) => ({ id: `observation:${phase}`, phase, observer,
+const observation = (phase: "pre" | "post", observer: string, observedAt: string) => ({ id: `evidence:${phase}`, phase, observer,
   planId: binding.planId, requestId: binding.requestId, scopeDigest, verificationPolicyDigest: hash, observedAt, freshUntil: "2026-08-20T00:00:00.000Z",
   source: "native" as const, fixture: false, provenanceRef: `provenance:${phase}`, provenanceDigest: (phase === "pre" ? "1" : "2").repeat(64), artifactSha256: (phase === "pre" ? "b" : "c").repeat(64), outputSha256: (phase === "pre" ? "d" : "e").repeat(64), sizeBytes: 10,
   packageState: phase === "pre" ? "absent" as const : "present" as const, packageId: "jq", version: phase === "pre" ? "absent" : "1.7.1", location: phase === "pre" ? "absent" : "/home/linuxbrew/.linuxbrew/bin/jq" });
@@ -46,8 +46,8 @@ describe("acquisition verification policy", () => {
     expect(await reason(draftAcquisitionVerification, request)).toBe("registry-not-approved");
   });
 
-  it("terminates structurally eligible synthetic data without authorizing success", async () => {
-    const structural = entry({ preparer: "", observations: entry().observations.map((item) => ({ ...item, source: "structural", fixture: true })) });
+  it("allows one accountable owner across registry and entry but still requires external verification", async () => {
+    const structural = entry({ owner: "identity:registry-policy-owner", preparer: "", observations: entry().observations.map((item) => ({ ...item, source: "structural", fixture: true })) });
     await expect(resolveAcquisitionVerification(await signed([structural], { preparer: "" }), request, now)).resolves.toMatchObject({ available: false, structurallyEligible: true, reason: "independent-verification-required", authenticity: "not-established", authority: "trusted-external-verifier-required" });
   });
 
@@ -106,9 +106,11 @@ describe("acquisition verification policy", () => {
 
   it.each([
     ["observer repeats", { observer: "identity:pre-observer" }], ["observer reuses evidence owner", { observer: "identity:evidence-owner" }], ["observer reuses independent reviewer", { observer: "identity:independent-reviewer" }],
-    ["observer reuses policy owner", { observer: "identity:entry-policy-owner" }], ["observer reuses preparer", { observer: "identity:entry-preparer" }], ["evidence id repeats", { id: "observation:pre" }],
+    ["observer reuses policy owner", { observer: "identity:entry-policy-owner" }], ["observer reuses preparer", { observer: "identity:entry-preparer" }], ["evidence id repeats", { id: "evidence:pre" }],
     ["provenance reuses preparer", { provenanceRef: "identity:entry-preparer" }], ["provenance repeats", { provenanceRef: "provenance:pre" }], ["provenance digest repeats", { provenanceDigest: "1".repeat(64) }],
     ["artifact repeats", { artifactSha256: "b".repeat(64) }], ["output repeats", { outputSha256: "d".repeat(64) }],
+    ["observer uses evidence namespace", { observer: "evidence:post" }], ["evidence uses identity namespace", { id: "identity:post-observer" }], ["provenance uses evidence namespace", { provenanceRef: "evidence:post" }],
+    ["provenance/artifact digest alias", { provenanceDigest: "b".repeat(64) }], ["artifact/output digest alias", { artifactSha256: "d".repeat(64) }], ["output/provenance digest alias", { outputSha256: "1".repeat(64) }],
     ["post absent", { packageState: "absent" }], ["package mismatch", { packageId: "git" }], ["version mismatch", { version: "2.0.0" }], ["location mismatch", { location: "/tmp/jq" }],
   ])("rejects contradictory pre/post evidence: %s", async (_name, change) => {
     const observations = [observation("pre", "identity:pre-observer", "2026-08-03T00:00:00.000Z"), { ...observation("post", "identity:post-observer", "2026-08-04T00:00:00.000Z"), ...change }];
