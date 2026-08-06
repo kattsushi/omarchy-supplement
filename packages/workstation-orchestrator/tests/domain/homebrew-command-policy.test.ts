@@ -7,11 +7,12 @@ import {
 import { draftHomebrewCommandPolicy } from "../../src/infrastructure/providers/draft-homebrew-command-policy.js";
 
 const now = new Date("2026-08-10T00:00:00.000Z"); const hash = "a".repeat(64);
-const linux: HomebrewCommandScope = { platform: "linux", architecture: "architecture:x86_64", distribution: "linuxbrew", packageKind: "formula",
-  provider: "homebrew", capabilityId: "homebrew-formula", observedHomebrewVersion: "4.6.0", binaryIdentity: "binary:brew@synthetic",
+const linux: HomebrewCommandScope = { platform: "linux", architecture: "x86_64", distribution: "linuxbrew", packageKind: "formula",
+  provider: "homebrew", capabilityId: "homebrew-formula", observedHomebrewVersion: "4.6.0", binaryIdentity: "brew",
   brewPrefix: "/home/linuxbrew/.linuxbrew", variantId: "variant:none" };
-const macos: HomebrewCommandScope = { ...linux, platform: "macos", architecture: "architecture:arm64", distribution: "homebrew-macos", packageKind: "cask",
+const macos: HomebrewCommandScope = { ...linux, platform: "macos", architecture: "arm64", distribution: "homebrew-macos", packageKind: "cask",
   capabilityId: "homebrew-cask", brewPrefix: "/opt/homebrew", variantId: "variant:synthetic" };
+const macosIntel: HomebrewCommandScope = { ...macos, architecture: "x86_64", brewPrefix: "/usr/local" };
 const lifecycle = { effectiveFrom: "2026-08-01T00:00:00.000Z", reviewBy: "2026-09-01T00:00:00.000Z", supportedUntil: "2026-10-01T00:00:00.000Z" };
 const approvals = [
   { role: "security" as const, reviewer: "reviewer:security-synthetic", decision: "approved" as const, decidedAt: "2026-08-02T00:00:00.000Z", signoffRef: `sha256:${hash}` },
@@ -20,7 +21,7 @@ const approvals = [
 const evidence = { source: "native" as const, fixture: false, repository: "https://example.test/synthetic-only", commitSha: hash, artifactSha256: hash,
   evidenceId: "evidence:synthetic-only", context: "bind:synthetic", outputSha256: hash, observedAt: "2026-08-02T00:00:00.000Z", freshUntil: "2026-09-01T00:00:00.000Z" };
 const grammar = (kind: HomebrewCommandScope["packageKind"], options: HomebrewCommandPolicyEntry["grammar"]["options"] = []) => ({
-  executable: "brew", route: ["install"], positionals: [{ name: kind, cardinality: "required" as const, canonicalization: "lowercase" as const,
+  executable: "brew", route: kind === "formula" ? ["install"] : ["install", "--cask"], positionals: [{ name: kind, cardinality: "required" as const, canonicalization: "lowercase" as const,
     pattern: kind === "formula" ? "^(?:[a-z0-9][a-z0-9@+._-]*)$" : "^(?:[a-z0-9][a-z0-9-]*)$" }], options,
 });
 const entryFor = (scope: HomebrewCommandScope, id = `policy:${scope.packageKind}-synthetic`): HomebrewCommandPolicyEntry => ({
@@ -39,6 +40,7 @@ async function signed(entries: readonly HomebrewCommandPolicyEntry[], overrides:
 const reason = async (registry: HomebrewCommandPolicyRegistry, scope: HomebrewCommandScope, argv: readonly string[]) => {
   const result = await resolveHomebrewCommandPolicy(registry, scope, argv, now); return result.available ? undefined : result.reason;
 };
+const argvFor = (scope: HomebrewCommandScope, name: string) => ["brew", "install", ...(scope.packageKind === "cask" ? ["--cask"] : []), name];
 
 describe("Homebrew command policy", () => {
   it("ships an integrity-valid empty draft that has no claimed policy roles or authority", async () => {
@@ -47,14 +49,14 @@ describe("Homebrew command policy", () => {
     await expect(resolveHomebrewCommandPolicy(draftHomebrewCommandPolicy, linux, ["brew", "install", "jq"], now)).resolves.toEqual({ available: false, reason: "registry-not-approved" });
   });
 
-  it.each([[linux, "jq"], [macos, "visual-studio-code"]] as const)("resolves synthetic %s mechanics without asserting real command correctness", async (scope, name) => {
-    await expect(resolveHomebrewCommandPolicy(await signed([entryFor(scope)]), scope, ["brew", "install", name], now)).resolves.toMatchObject({ available: true });
+  it.each([[linux, "jq"], [macos, "visual-studio-code"], [macosIntel, "visual-studio-code"]] as const)("resolves synthetic %s mechanics without asserting real command correctness", async (scope, name) => {
+    await expect(resolveHomebrewCommandPolicy(await signed([entryFor(scope)]), scope, argvFor(scope, name), now)).resolves.toMatchObject({ available: true });
   });
 
   it.each([
     ["platform", { ...linux, platform: "macos" }], ["distribution", { ...linux, distribution: "homebrew-macos" }], ["prefix", { ...linux, brewPrefix: "/opt/homebrew" }],
     ["version", { ...linux, observedHomebrewVersion: "4.6.1" }], ["binary", { ...linux, binaryIdentity: "binary:other" }],
-    ["architecture", { ...linux, architecture: "architecture:arm64" }], ["kind", { ...linux, packageKind: "cask" }],
+    ["architecture", { ...linux, architecture: "arm64" }], ["kind", { ...linux, packageKind: "cask" }],
     ["capability", { ...linux, capabilityId: "homebrew-cask" }], ["variant", { ...linux, variantId: "variant:other" }],
   ] as const)("rejects exact %s mismatch", async (_name, scope) => expect(await reason(await signed([entryFor(linux)]), scope as HomebrewCommandScope, ["brew", "install", "jq"])).toBe("scope-mismatch"));
 
@@ -62,14 +64,28 @@ describe("Homebrew command policy", () => {
     ["platform", { ...linux, platform: "windows" }], ["distribution", { ...linux, distribution: "macports" }], ["kind", { ...linux, packageKind: "bottle" }],
     ["provider", { ...linux, provider: "apt" }], ["capability", { ...linux, capabilityId: "homebrew-service" }],
     ["linux/macOS distribution", { ...linux, platform: "macos" }], ["kind/capability", { ...linux, capabilityId: "homebrew-cask" }],
-    ["version", { ...linux, observedHomebrewVersion: "latest" }], ["architecture", { ...linux, architecture: "x86_64" }],
+    ["version", { ...linux, observedHomebrewVersion: "latest" }], ["architecture", { ...linux, architecture: "riscv64" }],
   ])("rejects invalid runtime %s", async (_name, scope) => expect(await reason(await signed([entryFor(linux)]), scope as HomebrewCommandScope, ["brew", "install", "jq"])).toBe("scope-mismatch"));
 
-  it("enforces exact formula and cask grammar, including explicitly declared synthetic flags", async () => {
-    const cask = { ...entryFor(macos), grammar: grammar("cask", [{ token: "--cask", kind: "flag", cardinality: "required" }]) };
-    await expect(resolveHomebrewCommandPolicy(await signed([cask]), macos, ["brew", "install", "--cask", "visual-studio-code"], now)).resolves.toMatchObject({ available: true });
+  it("enforces canonical fixed cask placement", async () => {
+    await expect(resolveHomebrewCommandPolicy(await signed([entryFor(macos)]), macos, ["brew", "install", "--cask", "visual-studio-code"], now)).resolves.toMatchObject({ available: true });
+    const trailing = { ...entryFor(macos), grammar: { ...grammar("cask", [{ token: "--cask", kind: "flag", cardinality: "required" }]), route: ["install"] } };
+    expect(await reason(await signed([trailing]), macos, ["brew", "install", "visual-studio-code", "--cask"])).toBe("policy-invalid");
     await expect(resolveHomebrewCommandPolicy(await signed([entryFor(linux)]), linux, ["brew", "install", "jq"], now)).resolves.toMatchObject({ available: true });
-    expect(await reason(await signed([entryFor(macos)]), macos, ["brew", "install", "Visual-Studio-Code"])).toBe("argument-invalid");
+    expect(await reason(await signed([entryFor(macos)]), macos, ["brew", "install", "--cask", "Visual-Studio-Code"])).toBe("argument-invalid");
+  });
+
+  it.each([
+    ["Linux macOS prefix", { ...linux, brewPrefix: "/opt/homebrew" }, grammar("formula")],
+    ["macOS ARM Intel prefix", { ...macos, brewPrefix: "/usr/local" }, grammar("cask")],
+    ["macOS Intel ARM prefix", { ...macosIntel, brewPrefix: "/opt/homebrew" }, grammar("cask")],
+    ["cross distribution", { ...linux, distribution: "homebrew-macos" }, grammar("formula")],
+    ["shell executable", linux, { ...grammar("formula"), executable: "sh", route: ["-c"] }],
+    ["metachar executable", linux, { ...grammar("formula"), executable: "brew;sh" }],
+    ["wrong route", linux, { ...grammar("formula"), route: ["update"] }],
+    ["extra positional", linux, { ...grammar("formula"), positionals: [...grammar("formula").positionals, ...grammar("formula").positionals] }],
+  ] as const)("rejects declared %s entry relationship", async (_name, scope, grammar) => {
+    expect(await reason(await signed([{ ...entryFor(scope as HomebrewCommandScope), grammar } as HomebrewCommandPolicyEntry]), scope as HomebrewCommandScope, argvFor(scope as HomebrewCommandScope, "jq"))).toBe("policy-invalid");
   });
 
   it.each([

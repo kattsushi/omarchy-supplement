@@ -175,16 +175,23 @@ describe("draft Omarchy command policy", () => {
     expect(await reason(await signed({}, [{ ...entry, id: " policy:other-test ", scope: duplicate.scope }]))).toBe("policy-invalid");
   });
   it("fails closed at the generic specialization boundary", async () => {
-    const registry = await signed({}, [{ ...entry, evidence: [{ ...evidence, fixture: false }] }]); const argv = ["fixture-bin", "fixture-route", "target", "--fixture-flag"]; const calls = { scope: 0, registry: 0, entry: 0, context: 0 };
+    const registry = await signed({}, [{ ...entry, evidence: [{ ...evidence, fixture: false }] }]); const argv = ["fixture-bin", "fixture-route", "target", "--fixture-flag"]; const calls = { scope: 0, registry: 0, entry: 0, relationship: 0, context: 0 };
     const core = generic({ validScope: () => (++calls.scope, true), validRegistryVersion: () => (++calls.registry, true), validEntryVersion: () => (++calls.entry, true), evidenceContext: () => (++calls.context, {}) });
     expect(await core.resolve(registry, scope, argv, now)).toMatchObject({ available: true });
-    expect(calls).toEqual({ scope: 2, registry: 1, entry: 1, context: 1 });
+    expect(calls).toEqual({ scope: 2, registry: 1, entry: 1, relationship: 0, context: 1 });
+    const relationship = generic({ validEntryRelationship: (candidate) => { calls.relationship++; expect(candidate).not.toBe(entry);
+      expect([candidate, candidate.scope, candidate.grammar].every(Object.isFrozen)).toBe(true); return true; } });
+    expect(await relationship.resolve(registry, scope, argv, now)).toMatchObject({ available: true }); expect(calls.relationship).toBe(1);
     expect(await core.evidenceContextDigest(entry)).not.toBe(await core.evidenceContextDigest({ ...entry, scope: { ...scope, architecture: "arm64" } }));
     const mutate = generic({ validScope: (candidate) => ((candidate as { architecture: string }).architecture = "collapsed", true) });
     await expect(mutate.resolve(registry, scope, [], now)).resolves.toMatchObject({ available: false, reason: "scope-mismatch" }); expect(scope.architecture).toBe("x86_64");
     const throws = () => { throw new Error("provider"); };
     for (const callbacks of [{ validScope: () => ({}) as unknown as boolean }, { validRegistryVersion: () => ({}) as unknown as boolean }, { validEntryVersion: () => ({}) as unknown as boolean }, { validRegistryVersion: throws }, { validEntryVersion: throws }])
       await expect(generic(callbacks).resolve(registry, scope, [], now)).resolves.toMatchObject({ available: false });
+    for (const validEntryRelationship of [throws, () => ({}) as unknown as boolean, () => Promise.resolve(true) as unknown as boolean,
+      (candidate: Pick<OmarchyCommandPolicyEntry, "scope" | "grammar">) => ((candidate.scope as { architecture: string }).architecture = "mutated", true)])
+      await expect(generic({ validEntryRelationship }).resolve(registry, scope, argv, now)).resolves.toMatchObject({ available: false, reason: "policy-invalid" });
+    expect(entry.scope.architecture).toBe("x86_64");
     const cyclic: Record<string, unknown> = {}; cyclic.self = cyclic;
     for (const evidenceContext of [throws, () => cyclic]) {
       const invalid = generic({ evidenceContext }); await expect(invalid.evidenceContextDigest(entry)).resolves.toMatch(/^[a-f0-9]{64}$/);

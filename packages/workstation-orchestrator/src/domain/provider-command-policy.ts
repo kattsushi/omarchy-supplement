@@ -32,6 +32,7 @@ type Registry<SchemaVersion extends string, Scope, Role extends string> = Provid
 export interface ProviderCommandPolicySpecialization<SchemaVersion extends string, Scope, Role extends string> {
   readonly schemaVersion: SchemaVersion; readonly reviewerRoles: readonly Role[]; readonly scopeKeys: readonly (keyof Scope & string)[];
   readonly validScope: (scope: Scope) => boolean; readonly validRegistryVersion: (version: string) => boolean; readonly validEntryVersion: (version: string) => boolean;
+  readonly validEntryRelationship?: (entry: Pick<Entry<Scope, Role>, "scope" | "grammar">) => boolean;
   readonly evidenceContext: (entry: Pick<Entry<Scope, Role>, "scope" | "grammar">) => unknown;
 }
 
@@ -75,13 +76,15 @@ export function createProviderCommandPolicy<SchemaVersion extends string, Scope,
     && approvals.every((approval) => closed(specialization.reviewerRoles, approval.role) && canonical(approval.reviewer) && approval.decision === "approved" && timestamp(approval.decidedAt)
       && signoff.test(approval.signoffRef) && !same(approval.reviewer, owner) && !same(approval.reviewer, preparer))
     && new Set(approvals.map((approval) => approval.reviewer)).size === approvals.length;
-  const validEntry = (entry: PolicyEntry) => canonical(entry.id) && specialization.validEntryVersion(entry.version) === true && closed(statuses, entry.status)
-    && canonical(entry.owner) && canonical(entry.preparer) && !same(entry.owner, entry.preparer)
-    && closed(["user", "elevated"] as const, entry.privilege) && closed(["noninteractive", "interactive"] as const, entry.prompt)
-    && closed(["forbidden", "required"] as const, entry.network) && closed(["none", "bounded"] as const, entry.disclosure)
-    && closed(["read-only", "mutating"] as const, entry.sideEffect) && closed(["required", "not-required"] as const, entry.confirmation)
-    && entry.privilege === "user" && entry.prompt === "noninteractive" && entry.confirmation === "required" && canonical(entry.rollbackRef) && canonical(entry.reassessmentRef)
-    && entry.supersedes.every(canonical) && entry.conflictsWith.every(canonical) && (entry.supersededBy === undefined || canonical(entry.supersededBy)) && validGrammar(entry.grammar);
+  const validEntry = (entry: PolicyEntry) => { let relationship = true; try { relationship = specialization.validEntryRelationship === undefined
+      || specialization.validEntryRelationship(freeze(clone({ scope: entry.scope, grammar: entry.grammar }))) === true; } catch { relationship = false; }
+    return canonical(entry.id) && specialization.validEntryVersion(entry.version) === true && closed(statuses, entry.status)
+      && canonical(entry.owner) && canonical(entry.preparer) && !same(entry.owner, entry.preparer)
+      && closed(["user", "elevated"] as const, entry.privilege) && closed(["noninteractive", "interactive"] as const, entry.prompt)
+      && closed(["forbidden", "required"] as const, entry.network) && closed(["none", "bounded"] as const, entry.disclosure)
+      && closed(["read-only", "mutating"] as const, entry.sideEffect) && closed(["required", "not-required"] as const, entry.confirmation)
+      && entry.privilege === "user" && entry.prompt === "noninteractive" && entry.confirmation === "required" && canonical(entry.rollbackRef) && canonical(entry.reassessmentRef)
+      && entry.supersedes.every(canonical) && entry.conflictsWith.every(canonical) && (entry.supersededBy === undefined || canonical(entry.supersededBy)) && validGrammar(entry.grammar) && relationship; };
   const resolve = async (registry: PolicyRegistry, scope: Scope, argv: readonly string[], now: Date): Promise<ProviderCommandPolicyResolution<PolicyEntry>> => {
     try {
       if (!await validateIntegrity(registry)) return unavailable("integrity-invalid");
