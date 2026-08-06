@@ -135,18 +135,18 @@ const unavailable = (reason: MappingCatalogUnavailableReason): MappingCatalogRes
 const hasRequiredRoles = (roles: readonly MappingApprovalRole[]) => roles.length === 2
   && requiredApprovalRoles.every((role) => roles.includes(role));
 const validProvenance = (value?: MappingProvenance) => value !== undefined && !value.fixture
-  && value.repository.length > 0 && sha256Pattern.test(value.commitSha) && sha256Pattern.test(value.artifactSha256);
+  && canonicalNonblank(value.repository) && sha256Pattern.test(value.commitSha) && sha256Pattern.test(value.artifactSha256);
 const validApprovals = (catalog: MappingCatalog, entry: MappingCatalogEntry) => {
   const approvals = requiredApprovalRoles.map((role) => entry.approvals.find((approval) => approval.role === role && approval.decision === "approved"));
-  return canonicalIdentity(catalog.owner) && canonicalIdentity(entry.owner)
-    && (entry.preparer === undefined || canonicalIdentity(entry.preparer)) && entry.approvals.length === requiredApprovalRoles.length
-    && approvals.every((approval) => approval !== undefined && canonicalIdentity(approval.approver)
+  return canonicalNonblank(catalog.owner) && canonicalNonblank(entry.owner)
+    && (entry.preparer === undefined || canonicalNonblank(entry.preparer)) && entry.approvals.length === requiredApprovalRoles.length
+    && approvals.every((approval) => approval !== undefined && canonicalNonblank(approval.approver)
       && !sameIdentity(approval.approver, entry.owner) && !sameIdentity(approval.approver, entry.preparer) && !sameIdentity(approval.approver, catalog.owner)
       && immutableSignoffPattern.test(approval.signoffRef) && validIsoTimestamp(approval.decidedAt))
     && new Set(approvals.map((approval) => approval?.approver)).size === requiredApprovalRoles.length;
 };
 const nonblank = (value: unknown): value is string => typeof value === "string" && value.trim().length > 0;
-const canonicalIdentity = (value: unknown): value is string => nonblank(value) && value === value.trim();
+const canonicalNonblank = (value: unknown): value is string => nonblank(value) && value === value.trim();
 const sameIdentity = (left: string, right?: string) => right !== undefined && left.trim() === right.trim();
 const validIsoTimestamp = (value: unknown) => nonblank(value) && Number.isFinite(Date.parse(value)) && new Date(value).toISOString() === value;
 const validScope = (scope: MappingCatalogEntry["scope"]) => scopeKeys.every((key) => nonblank(scope[key]))

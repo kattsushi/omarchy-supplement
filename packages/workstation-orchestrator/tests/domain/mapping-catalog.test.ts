@@ -74,6 +74,8 @@ describe("mapping catalog", () => {
     ["one reviewer filling both roles", { ...entry, approvals: [entry.approvals[0]!, { ...entry.approvals[1]!, approver: entry.approvals[0]!.approver }] }],
     ["missing provenance", { ...entry, provenance: undefined }],
     ["fixture provenance", { ...entry, provenance: { ...provenance, fixture: true } }],
+    ["whitespace provenance repository", { ...entry, provenance: { ...provenance, repository: " " } }],
+    ["malformed provenance hash", { ...entry, provenance: { ...provenance, artifactSha256: "A".repeat(64) } }],
     ["padded entry owner", { ...entry, owner: ` ${entry.owner} ` }],
     ["padded preparer", { ...entry, preparer: ` ${entry.preparer!} ` }],
     ["padded reviewer", { ...entry, approvals: [{ ...entry.approvals[0]!, approver: ` ${entry.approvals[0]!.approver} ` }, entry.approvals[1]!] }],
