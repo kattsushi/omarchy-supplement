@@ -64,6 +64,19 @@ describe("draft Omarchy command policy", () => {
     const matching = { ...malformed, digest: await commandPolicyDigest(malformed) };
     await expect(resolve(matching)).resolves.toMatchObject({ available: false, reason: "policy-invalid" });
   });
+  it("rejects inherited, exotic, and cyclic policy records while preserving plain JSON", async () => {
+    const base = await signed({}, [{ ...entry, evidence: [{ ...evidence, fixture: false }] }]); const item = base.entries[0]!;
+    class PolicyRecord {} const cyclic = { ...item.scope } as Record<string, unknown>; cyclic.self = cyclic;
+    const candidates: unknown[] = [Object.create(base),
+      { ...base, entries: [Object.create(item)] }, { ...base, entries: [{ ...item, scope: Object.create(item.scope) }] },
+      { ...base, entries: [{ ...item, grammar: Object.create(item.grammar) }] }, { ...base, entries: [{ ...item, evidence: [Object.create(item.evidence[0]!)] }] },
+      { ...base, entries: [Object.assign(new PolicyRecord(), item)] }, { ...base, entries: [Object.assign(Object.create(null), item)] },
+      { ...base, entries: [{ ...item, scope: cyclic }] },
+    ];
+    for (const candidate of candidates) { await expect(validateCommandPolicyIntegrity(candidate as OmarchyCommandPolicyRegistry)).resolves.toBe(false);
+      await expect(resolve(candidate as OmarchyCommandPolicyRegistry)).resolves.toMatchObject({ available: false }); }
+    await expect(resolve(JSON.parse(JSON.stringify(base)) as OmarchyCommandPolicyRegistry)).resolves.toMatchObject({ available: true });
+  });
   it("rejects sparse and extra-key security arrays without throwing", async () => {
     const holes = <T>(length: number) => new Array<T>(length); const keyed = Object.assign(["fixture-route"], { extra: "unsupported" });
     const candidates: readonly [string, unknown][] = [

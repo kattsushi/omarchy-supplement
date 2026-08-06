@@ -48,12 +48,14 @@ const current = (window: CommandPolicyWindow, now: Date) => validWindow(window) 
   && now.getTime() <= Date.parse(window.reviewBy) && now.getTime() <= Date.parse(window.supportedUntil);
 
 export function canonicalCommandPolicyPayload(registry: OmarchyCommandPolicyRegistry): string {
+  if (!record(registry)) throw new TypeError("non-plain registry"); canonicalize(registry);
   const { digest: _digest, ...payload } = registry; return canonicalize(payload);
 }
 export async function commandPolicyDigest(registry: OmarchyCommandPolicyRegistry): Promise<string> {
   return digest(canonicalCommandPolicyPayload(registry));
 }
 export async function commandEvidenceContextDigest(entry: Pick<OmarchyCommandPolicyEntry, "scope" | "grammar">): Promise<string> {
+  if (!record(entry) || !Object.hasOwn(entry, "scope") || !Object.hasOwn(entry, "grammar")) throw new TypeError("non-plain entry");
   return digest(canonicalize({ scope: entry.scope, grammar: entry.grammar }));
 }
 async function digest(payload: string): Promise<string> {
@@ -61,14 +63,16 @@ async function digest(payload: string): Promise<string> {
   return [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, "0")).join("");
 }
 export async function validateCommandPolicyIntegrity(registry: OmarchyCommandPolicyRegistry): Promise<boolean> {
-  try { return sha.test(registry.digest) && registry.digest === await commandPolicyDigest(registry); } catch { return false; }
+  try { const field = record(registry) ? Object.getOwnPropertyDescriptor(registry, "digest") : undefined;
+    return field !== undefined && "value" in field && sha.test(field.value) && field.value === await commandPolicyDigest(registry); } catch { return false; }
 }
 export async function resolveOmarchyCommandPolicy(
   registry: OmarchyCommandPolicyRegistry, scope: CommandScope, argv: readonly string[], now: Date,
 ): Promise<CommandPolicyResolution> {
   try {
-  if (registry.status !== "approved") return unavailable("registry-not-approved");
   if (!await validateCommandPolicyIntegrity(registry)) return unavailable("integrity-invalid");
+  registry = JSON.parse(canonicalCommandPolicyPayload(registry)) as OmarchyCommandPolicyRegistry;
+  if (registry.status !== "approved") return unavailable("registry-not-approved");
   if (!validRuntimeShape(registry) || !validRegistry(registry)) return unavailable("policy-invalid");
   if (!registry.entries.every((entry) => canonical(entry.id)) || new Set(registry.entries.map((entry) => entry.id)).size !== registry.entries.length) return unavailable("policy-invalid");
   if (!validApprovals(registry.owner, registry.preparer, registry.requiredApprovals, registry.approvals)) return unavailable("approval-invalid");
@@ -137,7 +141,8 @@ const validArguments = (grammar: CommandGrammar, argv: readonly string[]) => {
   return grammar.positionals.every((definition, index) => { const value = positional[index]; if (value === undefined) return definition.cardinality === "optional";
     return new RegExp(definition.pattern).test(value) && (definition.canonicalization === "exact" || value === value.toLowerCase()); });
 };
-const record = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
+const record = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value)
+  && Object.getPrototypeOf(value) === Object.prototype;
 const denseArray = (value: unknown): value is readonly unknown[] => { if (!Array.isArray(value)) return false;
   const keys = Reflect.ownKeys(value).filter((key) => key !== "length"); return keys.length === value.length && keys.every((key, index) => key === String(index)); };
 const recordArray = (value: unknown) => denseArray(value) && value.every(record);
@@ -146,8 +151,12 @@ const validRuntimeShape = (registry: unknown): registry is OmarchyCommandPolicyR
   && registry.entries.every((entry) => record(entry) && record(entry.scope) && record(entry.grammar) && record(entry.lifecycle)
     && denseArray(entry.grammar.route) && recordArray(entry.grammar.positionals) && recordArray(entry.grammar.options)
     && recordArray(entry.approvals) && recordArray(entry.evidence) && denseArray(entry.supersedes) && denseArray(entry.conflictsWith));
-function canonicalize(value: unknown): string {
-  if (value === null || typeof value === "boolean" || typeof value === "number" || typeof value === "string") return JSON.stringify(value);
-  if (Array.isArray(value)) { if (!denseArray(value)) throw new TypeError("non-dense array"); return `[${value.map(canonicalize).join(",")}]`; } const record = value as Record<string, unknown>;
-  return `{${Object.keys(record).filter((key) => record[key] !== undefined).sort().map((key) => `${JSON.stringify(key)}:${canonicalize(record[key])}`).join(",")}}`;
+function canonicalize(value: unknown, ancestors = new Set<object>()): string {
+  if (value === null || typeof value === "boolean" || typeof value === "string" || (typeof value === "number" && Number.isFinite(value))) return JSON.stringify(value);
+  if (typeof value !== "object" || ancestors.has(value)) throw new TypeError("non-JSON value"); ancestors.add(value);
+  try { if (Array.isArray(value)) { if (!denseArray(value)) throw new TypeError("non-dense array"); return `[${value.map((item) => canonicalize(item, ancestors)).join(",")}]`; }
+    if (!record(value)) throw new TypeError("non-plain object"); const keys = Object.keys(value); const descriptors = Object.getOwnPropertyDescriptors(value);
+    if (Reflect.ownKeys(value).length !== keys.length || keys.some((key) => !descriptors[key]?.enumerable || !("value" in descriptors[key]!))) throw new TypeError("non-JSON property");
+    return `{${keys.sort().map((key) => `${JSON.stringify(key)}:${canonicalize(value[key], ancestors)}`).join(",")}}`;
+  } finally { ancestors.delete(value); }
 }
