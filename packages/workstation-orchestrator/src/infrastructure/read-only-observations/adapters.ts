@@ -1,6 +1,7 @@
 import * as Effect from "effect/Effect";
 import * as Result from "effect/Result";
-import type { ParsedWorkstationSourceResult, WorkstationSource } from "../../application/contracts/bash.js";
+import * as Schema from "effect/Schema";
+import { InvalidContract, WorkstationSource, type ParsedWorkstationSourceResult } from "../../application/contracts/bash.js";
 import {
   ObservationUnavailable,
   type EvidenceStatusPortShape,
@@ -51,6 +52,23 @@ const metadata = (source: WorkstationSource, evidenceStrength: "native" | "struc
   evidenceStrength,
 });
 
+const snapshot = (result: ParsedWorkstationSourceResult): ParsedWorkstationSourceResult => {
+  if (Result.isFailure(result)) return result;
+  try {
+    const source = result.success;
+    return Result.succeed(deepFreeze(Schema.decodeUnknownSync(WorkstationSource)({
+      ...source,
+      platform: { ...source.platform },
+      omarchy: { ...source.omarchy },
+      profiles: source.profiles.map((profile) => ({ ...profile, dotfileSelectors: [...profile.dotfileSelectors] })),
+      expectations: source.expectations.map((expectation) => ({ ...expectation })),
+      evidence: source.evidence.map((record) => ({ ...record })),
+    })));
+  } catch {
+    return Result.fail(new InvalidContract({ code: "source-snapshot-invalid", evidenceDigest: "fingerprint:invalid" }));
+  }
+};
+
 const evidence = (
   source: WorkstationSource,
   subjectId: string,
@@ -71,13 +89,6 @@ const evidence = (
 
 const platformAdapter = (result: ParsedWorkstationSourceResult): PlatformFactsPortShape => Object.freeze({
   facts: fromSource(result, "platform", (source) => {
-    if (source.omarchy.availability === "unavailable") return new ObservationUnavailable({
-      subject: "platform",
-      reasonCode: source.omarchy.reason,
-      sourceContract,
-      sourceVersion,
-      sourceFingerprint: source.sourceFingerprint,
-    });
     if (source.platform.name === "unknown" || source.platform.architecture === "unknown") return new ObservationUnavailable({
       subject: "platform",
       reasonCode: "source-platform-unavailable",
@@ -85,24 +96,21 @@ const platformAdapter = (result: ParsedWorkstationSourceResult): PlatformFactsPo
       sourceVersion,
       sourceFingerprint: source.sourceFingerprint,
     });
-    if (source.platform.name !== "linux") return new ObservationUnavailable({
-      subject: "platform",
-      reasonCode: "source-platform-contradictory",
-      sourceContract,
-      sourceVersion,
-      sourceFingerprint: source.sourceFingerprint,
-    });
     const platformContext = `${source.platform.name}/${source.platform.architecture}`;
+    const omarchy = source.omarchy.availability === "observed" && source.platform.name === "linux"
+      ? source.omarchy
+      : { availability: "unavailable" as const, reason: source.omarchy.availability === "unavailable" ? source.omarchy.reason : "malformed-or-ambiguous" };
     return {
       platform: source.platform.name,
       architecture: source.platform.architecture,
-      generation: source.omarchy.generation,
-      omarchyVersion: source.omarchy.version,
+      generation: omarchy.availability === "observed" ? omarchy.generation : "unknown" as const,
+      ...(omarchy.availability === "observed" ? { omarchyVersion: omarchy.version } : { omarchyUnavailableReason: omarchy.reason }),
+      omarchyAvailability: omarchy.availability,
       observationDigest: source.sourceFingerprint,
       ...metadata(source, "native"),
       evidence: [
         evidence(source, "platform:workstation", "platform-observed", source.platform.name, platformContext),
-        evidence(source, "platform:omarchy", "omarchy-observed", source.omarchy.generation, platformContext),
+        evidence(source, "platform:omarchy", omarchy.availability === "observed" ? "omarchy-observed" : "omarchy-unavailable", omarchy.availability === "observed" ? omarchy.generation : omarchy.reason, platformContext),
       ],
     };
   }),
@@ -153,9 +161,12 @@ const programEvidenceAdapter = (result: ParsedWorkstationSourceResult): Evidence
   }),
 });
 
-export const makeReadOnlyObservationAdapters = (result: ParsedWorkstationSourceResult) => Object.freeze({
-  platform: platformAdapter(result),
-  profiles: profilesAdapter(result),
-  sourceEvidence: sourceEvidenceAdapter(result),
-  programEvidence: programEvidenceAdapter(result),
-});
+export const makeReadOnlyObservationAdapters = (result: ParsedWorkstationSourceResult) => {
+  const source = snapshot(result);
+  return Object.freeze({
+    platform: platformAdapter(source),
+    profiles: profilesAdapter(source),
+    sourceEvidence: sourceEvidenceAdapter(source),
+    programEvidence: programEvidenceAdapter(source),
+  });
+};

@@ -19,6 +19,8 @@ export const PlatformFacts = Schema.Struct({
   sourceVersion: Schema.optional(Schema.String),
   sourceFingerprint: Schema.optional(Schema.String),
   evidenceStrength: Schema.optional(Schema.Literals(["native", "structural"])),
+  omarchyAvailability: Schema.optional(Schema.Literals(["observed", "unavailable"])),
+  omarchyUnavailableReason: Schema.optional(Schema.String),
 });
 export type PlatformFacts = typeof PlatformFacts.Type;
 

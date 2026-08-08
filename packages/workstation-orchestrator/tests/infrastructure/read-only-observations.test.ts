@@ -24,6 +24,19 @@ program\tprogram:neovim\tpresent\tunavailable\tunavailable\tunavailable\tunavail
 status\tcomplete
 `;
 
+const completeManifestSource = () => {
+  const manifest = readFileSync(new URL("../../../../bootstrap/contracts/workstation-source-v1.tsv", import.meta.url), "utf8");
+  const records = manifest.trimEnd().split("\n").slice(1).map((line) => line.split("\t"));
+  const profiles = records.filter(([tag]) => tag === "profile");
+  const sources = records.filter(([tag]) => tag === "source");
+  const expectations = sources.map(([, selector, platform, sourceName, concern, kind, id, probe]) => {
+    const profileId = profiles.find(([, , , selectors]) => selectors?.split(",").includes(selector!))?.[1];
+    return `expectation\t${profileId}\t${platform}\t${selector}\t${sourceName}\t${concern}\t${kind}\t${id}\t${probe}`;
+  }).sort();
+  const evidence = [...new Set(sources.map(([, , , , , kind, id]) => `${kind}\t${id}\tunavailable\tunavailable\tunavailable\tunavailable\tunavailable`))].sort();
+  return `schema\tworkstation-source-v1\nsource_fingerprint\t${fingerprint}\nplatform\tlinux\tx86_64\nomarchy\tunavailable\tprobe-failed\t-\n${profiles.map(([, id, bootstrap, selectors], index) => `profile\t${id}\t${bootstrap}\t${selectors}\t${index === 0 ? "selected" : "available"}`).join("\n")}\n${expectations.join("\n")}\n${evidence.join("\n")}\nstatus\tcomplete\n`;
+};
+
 const parsed = (text = source()) => {
   const result = parseWorkstationSource(text);
   if (Result.isFailure(result)) throw result.failure;
@@ -42,6 +55,7 @@ describe("authoritative read-only observation adapters", () => {
       architecture: "x86_64",
       generation: "omarchy-4",
       omarchyVersion: "4.2.1",
+      omarchyAvailability: "observed",
       observationDigest: fingerprint,
       sourceContract: "workstation-source-v1",
       sourceVersion: "1",
@@ -152,30 +166,52 @@ describe("authoritative read-only observation adapters", () => {
     }
   });
 
-  test("fails platform facts closed for unavailable, unknown, or contradictory authority", async () => {
-    const unavailable = parsed(source().replace("observed\t4.2.1\tomarchy-4", "unavailable\ttimeout\t-"));
-    expect(await errorOf(makeReadOnlyObservationAdapters(unavailable).platform.facts)).toMatchObject({
-      subject: "platform",
-      reasonCode: "timeout",
-      sourceFingerprint: fingerprint,
-    });
+  test("preserves Linux and macOS platform facts independently of Omarchy", async () => {
+    for (const platform of ["linux", "macos"] as const) {
+      const unavailable = parsed(source()
+        .replace("platform\tlinux\tx86_64", `platform\t${platform}\tx86_64`)
+        .replace("observed\t4.2.1\tomarchy-4", "unavailable\ttimeout\t-"));
+      expect(await Effect.runPromise(makeReadOnlyObservationAdapters(unavailable).platform.facts)).toMatchObject({
+        platform,
+        architecture: "x86_64",
+        generation: "unknown",
+        omarchyAvailability: "unavailable",
+        omarchyUnavailableReason: "timeout",
+        sourceFingerprint: fingerprint,
+      });
+    }
+  });
 
-    for (const [text, reasonCode] of [
+  test("preserves valid Omarchy 3/4 and isolates contradictory Omarchy evidence", async () => {
+    for (const [version, generation] of [["3.2.1", "omarchy-3"], ["4.2.1", "omarchy-4"]] as const) {
+      const facts = await Effect.runPromise(makeReadOnlyObservationAdapters(parsed(source().replace("4.2.1\tomarchy-4", `${version}\t${generation}`))).platform.facts);
+      expect(facts).toMatchObject({ platform: "linux", architecture: "x86_64", omarchyAvailability: "observed", omarchyVersion: version, generation });
+    }
+
+    for (const text of [
+      source().replace("4.2.1\tomarchy-4", "3.2.1\tomarchy-4"),
+      source().replace("platform\tlinux\tx86_64", "platform\tmacos\tx86_64"),
+    ]) {
+      const facts = await Effect.runPromise(makeReadOnlyObservationAdapters(parsed(text)).platform.facts);
+      expect(facts).toMatchObject({ platform: expect.any(String), architecture: "x86_64", generation: "unknown", omarchyAvailability: "unavailable", omarchyUnavailableReason: "malformed-or-ambiguous" });
+      expect(facts).not.toHaveProperty("omarchyVersion");
+    }
+  });
+
+  test("fails platform facts closed only for unsupported platform or architecture", async () => {
+    for (const text of [
       [source().replace("platform\tlinux\tx86_64", "platform\tunknown\tx86_64"), "source-platform-unavailable"],
       [source().replace("platform\tlinux\tx86_64", "platform\tlinux\tunknown"), "source-platform-unavailable"],
-      [source().replace("platform\tlinux\tx86_64", "platform\tmacos\tx86_64"), "source-platform-contradictory"],
     ] as const) {
-      expect(await errorOf(makeReadOnlyObservationAdapters(parsed(text)).platform.facts)).toMatchObject({
+      expect(await errorOf(makeReadOnlyObservationAdapters(parsed(text[0])).platform.facts)).toMatchObject({
         subject: "platform",
-        reasonCode,
+        reasonCode: text[1],
       });
     }
   });
 
   test("carries parser failures for semver, generation, completeness, duplicates, and missing records", async () => {
     const invalidSources = [
-      source().replace("4.2.1\tomarchy-4", "3.2.1\tomarchy-4"),
-      source().replace("4.2.1\tomarchy-4", "4.2.1\tomarchy-3"),
       source().replace("4.2.1\tomarchy-4", "5.0.0\tomarchy-4"),
       source().replace(/^expectation\tprofile:omarchy.*\n/m, ""),
       source().replace(/^dependency\tdependency:git.*\n/m, ""),
@@ -212,13 +248,21 @@ describe("authoritative read-only observation adapters", () => {
     const adapters = makeReadOnlyObservationAdapters(Result.succeed(mutable));
     const firstProfiles = await Effect.runPromise(adapters.profiles.inventory);
     const firstEvidence = await Effect.runPromise(adapters.sourceEvidence.observations);
+    const programId = Schema.decodeUnknownSync(ProgramId)("program:neovim");
+    const firstProgram = await Effect.runPromise(adapters.programEvidence.forProgram(programId));
     (mutable.profiles as Array<WorkstationSource["profiles"][number]>)[0] = mutable.profiles[1]!;
     (mutable.expectations as Array<WorkstationSource["expectations"][number]>).reverse();
+    (mutable.expectations as unknown as Array<{ concern: string }>)[0]!.concern = "mutated";
+    (mutable.evidence as unknown as Array<{ id: string; availability: string }>).find(({ id }) => id === "program:neovim")!.availability = "missing";
+    (mutable.evidence as unknown as Array<{ id: string }>).find(({ id }) => id === "dependency:git")!.id = "dependency:mutated";
     const secondProfiles = await Effect.runPromise(adapters.profiles.inventory);
     const secondEvidence = await Effect.runPromise(adapters.sourceEvidence.observations);
+    const secondProgram = await Effect.runPromise(adapters.programEvidence.forProgram(programId));
 
     expect(secondProfiles).toEqual(firstProfiles);
     expect(secondEvidence).toEqual(firstEvidence);
+    expect(secondProgram).toEqual(firstProgram);
+    expect(secondProgram.packageState).toBe("present");
     expect(secondProfiles.profiles[0]?.id).toBe("profile:base");
     expect(secondProfiles.profiles.length).toBeLessThanOrEqual(256);
     expect(secondProfiles.expectations.length).toBeLessThanOrEqual(256);
@@ -235,6 +279,25 @@ describe("authoritative read-only observation adapters", () => {
       secondEvidence[0]?.evidence,
     ].every(Object.isFrozen)).toBe(true);
     expect(() => (secondProfiles.profiles as Array<(typeof secondProfiles.profiles)[number]>).push(secondProfiles.profiles[0]!)).toThrow(TypeError);
+  });
+
+  test("validates snapshots and maps every manifest expectation exactly once", async () => {
+    const result = parseWorkstationSource(completeManifestSource());
+    if (Result.isFailure(result)) throw result.failure;
+    const adapters = makeReadOnlyObservationAdapters(result);
+    const inventory = await Effect.runPromise(adapters.profiles.inventory);
+    const observations = await Effect.runPromise(adapters.sourceEvidence.observations);
+    const expected = inventory.expectations.map(({ profileId, platform, selector, source, kind, id }) => `${profileId}|${platform}|${selector}|${source}|${kind}|${id}`).sort();
+    const projected = observations.flatMap(({ expectations }) => expectations.map(({ profileId, platform, selector, source, kind, id }) => `${profileId}|${platform}|${selector}|${source}|${kind}|${id}`)).sort();
+
+    expect(expected).toHaveLength(22);
+    expect(new Set(projected).size).toBe(22);
+    expect(projected).toEqual(expected);
+    expect(observations).toHaveLength(13);
+
+    const malformed = structuredClone(result.success) as WorkstationSource;
+    (malformed.evidence as unknown as Array<{ availability: string }>)[0]!.availability = "verified";
+    expect(await errorOf(makeReadOnlyObservationAdapters(Result.succeed(malformed)).sourceEvidence.observations)).toMatchObject({ reasonCode: "source-snapshot-invalid" });
   });
 
   test("keeps over-limit and private source data behind typed unavailable errors", async () => {
