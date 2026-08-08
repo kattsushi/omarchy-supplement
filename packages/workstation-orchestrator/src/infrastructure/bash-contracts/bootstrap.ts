@@ -5,10 +5,17 @@ export type Brf = { readonly profiles: readonly string[]; readonly complete: boo
 const safe = /^[a-z0-9][a-z0-9._@-]*$/;
 const sha = /^sha256:[a-f0-9]{64}$/;
 const invalid = (text: string, code: string) => Result.fail(new InvalidContract({ code, evidenceDigest: evidenceFingerprint(text) }));
+const actionStates = {
+  noop: (id: string): Brf["actions"][number] => ({ id, state: "noop" }),
+  execute: (id: string): Brf["actions"][number] => ({ id, state: "execute" }),
+  blocked: (id: string): Brf["actions"][number] => ({ id, state: "blocked" }),
+} as const;
+
 const action = (fields: readonly string[]): Brf["actions"][number] | undefined => {
   const [tag, id = "", subject = "", order = "", requirement = "", source = "", desired = "", state = "", mode = ""] = fields;
-  const valid = fields.length === 9 && tag === "action" && safe.test(id) && safe.test(subject) && /^\d+$/.test(order) && ["required", "optional"].includes(requirement) && safe.test(source) && safe.test(desired) && ["noop", "execute", "blocked"].includes(state) && ["automatic", "unsupported"].includes(mode);
-  return !valid ? undefined : state === "noop" ? { id, state } : state === "execute" ? { id, state } : { id, state: "blocked" };
+  const actionState = actionStates[state as keyof typeof actionStates];
+  const valid = fields.length === 9 && tag === "action" && safe.test(id) && safe.test(subject) && /^\d+$/.test(order) && ["required", "optional"].includes(requirement) && safe.test(source) && safe.test(desired) && actionState !== undefined && ["automatic", "unsupported"].includes(mode);
+  return !valid ? undefined : actionState(id);
 };
 export const parseBrf = (text: string): Result.Result<Brf, InvalidContract | Refused> => {
   if (!text.endsWith("\n") || text.length > 262144 || /\r|secret|token|password|private[_-]?key|\/home\/|@/i.test(text)) return invalid(text, "brf-bounds-or-privacy");
