@@ -1,4 +1,4 @@
-import type { PublicResultV2 } from "../../../application/contracts/public-result.js";
+import { sanitizePublicResultV2, type PublicResultV2 } from "../../../application/contracts/public-result.js";
 
 export const tuiViewIds = ["overview", "platform-policy", "profiles", "programs", "plans", "blockers", "evidence", "backups"] as const;
 export type TuiViewId = typeof tuiViewIds[number];
@@ -44,8 +44,10 @@ const planItems = (result: PublicResultV2): readonly string[] => result.payload.
   : [];
 const backupItems = (result: PublicResultV2): readonly string[] => result.payload.kind === "assessment"
   ? result.payload.backups
-  : result.payload.kind === "backup" || result.payload.kind === "guidance"
-    ? [result.payload.backupId]
+  : result.payload.kind === "backup"
+    ? [result.payload.backupId, result.payload.targetId, ...result.payload.identityEvidenceIds, ...result.payload.integrityEvidenceIds, result.payload.eligibility]
+    : result.payload.kind === "guidance"
+      ? [result.payload.backupId, result.payload.targetId, ...result.payload.prerequisites, ...result.payload.steps, ...result.payload.checks, ...result.payload.stopConditions]
     : [];
 
 const itemsFor = (id: TuiViewId, result: PublicResultV2): readonly string[] => {
@@ -62,14 +64,17 @@ const itemsFor = (id: TuiViewId, result: PublicResultV2): readonly string[] => {
   return byId[id];
 };
 
-export const createTuiPresentation = (result: PublicResultV2, columns: number): TuiPresentation => ({
-  result,
-  layout: columns < 80 ? "stacked" : "split",
-  views: tuiViewIds.map((id) => {
+export const createTuiPresentation = (result: PublicResultV2, columns: number): TuiPresentation => {
+  const safeResult = sanitizePublicResultV2(result);
+  return {
+    result: safeResult,
+    layout: columns < 80 ? "stacked" : "split",
+    views: tuiViewIds.map((id) => {
     const [title, shortTitle] = titles[id];
-    return { id, title, shortTitle, role: "region", accessibleLabel: title, items: itemsFor(id, result) };
-  }),
-});
+      return { id, title, shortTitle, role: "region", accessibleLabel: title, items: itemsFor(id, safeResult) };
+    }),
+  };
+};
 
 export type TuiState = {
   readonly result: PublicResultV2;
@@ -82,8 +87,9 @@ export type TuiState = {
 const viewIndexForKey = (key: string): number | undefined => /^[1-8]$/.test(key) ? Number(key) - 1 : undefined;
 
 export const createTuiController = (result: PublicResultV2, columns: number) => {
-  const presentation = createTuiPresentation(result, columns);
-  let state: TuiState = { result, viewId: "overview", focusIndex: 0, overlay: undefined };
+  const safeResult = sanitizePublicResultV2(result);
+  const presentation = createTuiPresentation(safeResult, columns);
+  let state: TuiState = { result: safeResult, viewId: "overview", focusIndex: 0, overlay: undefined };
   const currentItems = (): readonly string[] => presentation.views.find((view) => view.id === state.viewId)?.items ?? [];
   const select = (delta: number): void => {
     const items = currentItems();

@@ -3,6 +3,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import type { AgentOperation, AgentRequest } from "./agent-request.js";
 import type { PublicResult, PublicResultV1, PublicResultV2 } from "./public-result.js";
+import { manualRestoreGuidance, type BackupVisibility } from "../../domain/recovery.js";
 
 export const operationNames = ["assess_workstation", "list_profiles", "plan_package_install", "show_evidence", "show_backup", "restore_guidance"] as const;
 export const unsupportedResult = (operation: AgentOperation, correlationId: string): PublicResultV1 => ({
@@ -33,6 +34,7 @@ export const unavailableOperationHandlers: OperationHandlers = {
 
 type AssessmentService = { readonly assess: (programIds: readonly any[]) => Effect.Effect<any, any, never> };
 type PlanningService = { readonly plan: (request: any) => Effect.Effect<any, any, never> };
+type BackupService = { readonly backups: () => Effect.Effect<readonly BackupVisibility[], unknown> };
 
 const unavailableByOperation = {
   list_profiles: unavailable,
@@ -41,7 +43,30 @@ const unavailableByOperation = {
   restore_guidance: unavailable,
 } satisfies Pick<OperationHandlers, "list_profiles" | "show_evidence" | "show_backup" | "restore_guidance">;
 
-export const makeReadOnlyOperationHandlers = (assessment: AssessmentService, planning: PlanningService): OperationHandlers => ({
+const backupEvidence = (backup: BackupVisibility) => [...backup.identityEvidenceIds, ...backup.integrityEvidenceIds].map((evidenceId) => ({ evidenceId, strength: "structural" as const, summaryCode: "backup-verification" }));
+const backupResult = (request: AgentRequest, backup: BackupVisibility): PublicResultV2 => ({
+  version: "PublicResultV2", operation: "show_backup", status: "completed", correlationId: request.requestId,
+  payload: { kind: "backup", backupId: backup.backupId, targetId: backup.targetId ?? "target:unresolved", eligibility: backup.state, identityEvidenceIds: backup.identityEvidenceIds, integrityEvidenceIds: backup.integrityEvidenceIds },
+  blockers: [], evidence: backupEvidence(backup), nextActions: [backup.nextAction.reasonCode],
+});
+const guidanceResult = (request: AgentRequest, backup: BackupVisibility): PublicResultV2 => {
+  const guidance = manualRestoreGuidance(backup);
+  return {
+    version: "PublicResultV2", operation: "restore_guidance", status: guidance.eligible ? "completed" : "refused", correlationId: request.requestId,
+    payload: { kind: "guidance", backupId: guidance.backupId, targetId: guidance.targetId, manualOnly: true, prerequisites: guidance.prerequisites, steps: guidance.steps, checks: guidance.checks, stopConditions: guidance.stopConditions },
+    blockers: guidance.eligible ? [] : [{ code: "operation-refused" }], evidence: backupEvidence(backup), nextActions: [backup.nextAction.reasonCode],
+  };
+};
+const backupHandler = (request: AgentRequest, backups: BackupService, operation: "show_backup" | "restore_guidance") => request.operation !== operation
+  ? unavailable(request)
+  : Effect.flatMap(backups.backups(), (values) => {
+    const backup = values.find((value) => value.backupId === request.input.backupId);
+    return backup === undefined
+      ? unavailable(request, "source-unavailable")
+      : Effect.succeed(operation === "show_backup" ? backupResult(request, backup) : guidanceResult(request, backup));
+  });
+
+export const makeReadOnlyOperationHandlers = (assessment: AssessmentService, planning: PlanningService, backups: BackupService = { backups: () => Effect.succeed([]) }): OperationHandlers => ({
   ...unavailableByOperation,
   assess_workstation: (request) => request.operation !== "assess_workstation" ? unavailable(request) : Effect.map(assessment.assess(request.input.programIds), (value): PublicResultV2 => ({
     version: "PublicResultV2", operation: "assess_workstation", status: value.blockers.length === 0 ? "completed" : "refused", correlationId: request.requestId,
@@ -57,6 +82,8 @@ export const makeReadOnlyOperationHandlers = (assessment: AssessmentService, pla
     version: "PublicResultV2", operation: "plan_package_install", status: "completed", correlationId: request.requestId,
     payload: { kind: "plan", provider: value.plan.plan.binding.provider, providerRole: value.plan.plan.binding.providerRole, policyId: value.plan.plan.binding.providerPolicy.id, planId: value.plan.plan.planId, bindingDigest: `digest:${value.plan.plan.digest}`, confirmationRequired: true, acquisitionDoesNotVerifyConfiguration: true, acquisitionDoesNotVerifyDotfileStow: true }, blockers: [], evidence: [], nextActions: [],
   }).pipe(Effect.catchCause(() => unavailable(request, "source-unavailable"))),
+  show_backup: (request) => backupHandler(request, backups, "show_backup").pipe(Effect.catchCause(() => unavailable(request, "source-unavailable"))),
+  restore_guidance: (request) => backupHandler(request, backups, "restore_guidance").pipe(Effect.catchCause(() => unavailable(request, "source-unavailable"))),
 });
 
 export interface OperationRegistryShape {

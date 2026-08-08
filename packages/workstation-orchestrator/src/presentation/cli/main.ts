@@ -6,6 +6,7 @@ import { encodePublicResult } from "./public-result-encoder.js";
 import { decodeAgentRequest } from "./agent-request-decoder.js";
 import { classifyRoute } from "./effect-cli-adapter.js";
 import { exitCodeFor } from "./exit-codes.js";
+import { runWorkstationTui } from "../tui/runtime.js";
 
 const invalid = (correlationId = "request:invalid") => ({
   version: "PublicResultV2" as const, operation: "assess_workstation" as const, status: "invalid-request" as const, correlationId,
@@ -22,9 +23,13 @@ const readFrame = async (): Promise<Uint8Array> => {
   return frame;
 };
 
-export const runWorkstation = async (argv: readonly string[], read = readFrame): Promise<number> => {
+export const runWorkstation = async (argv: readonly string[], read = readFrame, runTui = runWorkstationTui): Promise<number> => {
   const route = classifyRoute(argv);
-  if (route.kind === "help" || route.kind === "tui" || route.kind === "invalid") {
+  if (route.kind === "tui") {
+    await runTui();
+    return 0;
+  }
+  if (route.kind === "help" || route.kind === "invalid") {
     const response = invalid();
     process.stdout.write(encodePublicResult(response));
     return exitCodeFor(response.status);
