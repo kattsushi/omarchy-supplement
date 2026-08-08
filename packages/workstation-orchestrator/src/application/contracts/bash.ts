@@ -27,7 +27,7 @@ export type SourceRequest = typeof SourceRequest.Type;
 export type WorkstationSource = {
   readonly sourceFingerprint: string;
   readonly platform: { readonly name: "linux" | "macos" | "unknown"; readonly architecture: "x86_64" | "aarch64" | "unknown" };
-  readonly omarchy: { readonly availability: "observed"; readonly version: string; readonly generation: "omarchy-3" | "omarchy-4" | "unknown" } | { readonly availability: "unavailable"; readonly reason: string };
+  readonly omarchy: { readonly availability: "observed"; readonly version: string; readonly generation: "omarchy-3" | "omarchy-4" } | { readonly availability: "unavailable"; readonly reason: string };
   readonly profiles: readonly { readonly id: string; readonly bootstrapSelector: string; readonly dotfileSelectors: readonly string[]; readonly selected: boolean }[];
   readonly expectations: readonly { readonly profileId: string; readonly platform: "any" | "darwin" | "linux"; readonly selector: string; readonly source: string; readonly concern: string; readonly kind: "program" | "dependency"; readonly id: string; readonly probe: string }[];
   readonly evidence: readonly { readonly kind: "program" | "dependency"; readonly id: string; readonly availability: "present" | "missing" | "unavailable"; readonly version: "unavailable"; readonly configuration: "unavailable"; readonly dotfileStow: "unavailable"; readonly acquisition: "unavailable" }[];

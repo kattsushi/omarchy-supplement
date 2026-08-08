@@ -48,9 +48,11 @@ case "$(bootstrap_os)" in arch|linux) platform=linux;; darwin|macos) platform=ma
 case "$(bootstrap_arch)" in x86_64|amd64) architecture=x86_64;; aarch64|arm64) architecture=aarch64;; *) architecture=unknown;; esac
 
 observe_omarchy() {
-	local output rc matches version generation
+	local output rc first token version generation
+	local -a matches=()
+	local semver='(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?'
 	if [[ -n ${BOOTSTRAP_TEST_OMARCHY_OBSERVATION+x} ]]; then
-		case $BOOTSTRAP_TEST_OMARCHY_OBSERVATION in missing|timeout|oversize) printf 'unavailable\t%s\t-' "$BOOTSTRAP_TEST_OMARCHY_OBSERVATION"; return;; esac
+		case $BOOTSTRAP_TEST_OMARCHY_OBSERVATION in missing|timeout) printf 'unavailable\t%s\t-' "$BOOTSTRAP_TEST_OMARCHY_OBSERVATION"; return;; oversize) printf 'unavailable\toutput-limit\t-'; return;; esac
 		output=$BOOTSTRAP_TEST_OMARCHY_OBSERVATION
 	elif ! command -v omarchy >/dev/null 2>&1; then
 		printf 'unavailable\tmissing\t-'; return
@@ -59,11 +61,13 @@ observe_omarchy() {
 		[[ $rc -ne 124 ]] || { printf 'unavailable\ttimeout\t-'; return; }
 		[[ $rc -eq 0 ]] || { printf 'unavailable\tprobe-failed\t-'; return; }
 	fi
-	((${#output} <= 512)) || { printf 'unavailable\toutput-limit\t-'; return; }
-	matches=$(grep -Eo '(^|[^0-9])[0-9]+\.[0-9]+\.[0-9]+([^0-9]|$)' <<<"$output" | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+' || true)
-	[[ $(wc -l <<<"$matches") -eq 1 && -n $matches ]] || { printf 'unavailable\tmalformed-or-ambiguous\t-'; return; }
-	version=$matches
-	case $version in 3.*) generation=omarchy-3;; 4.*) generation=omarchy-4;; *) generation=unknown;; esac
+	[[ $output != *$'\n'* ]] || { printf 'unavailable\tmalformed-or-ambiguous\t-'; return; }
+	first=$output
+	[[ $(printf '%s' "$first" | wc -c) -le 512 ]] || { printf 'unavailable\toutput-limit\t-'; return; }
+	for token in ${first//[^0-9A-Za-z.+-]/ }; do [[ $token =~ ^$semver$ ]] && matches+=("$token"); done
+	((${#matches[@]} == 1)) || { printf 'unavailable\tmalformed-or-ambiguous\t-'; return; }
+	version=${matches[0]}
+	case $version in 3.*) generation=omarchy-3;; 4.*) generation=omarchy-4;; *) printf 'unavailable\tunsupported-major\t-'; return;; esac
 	printf 'observed\t%s\t%s' "$version" "$generation"
 }
 

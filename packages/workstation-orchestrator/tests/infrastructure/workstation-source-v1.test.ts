@@ -17,21 +17,27 @@ omarchy\tobserved\t4.2.1\tomarchy-4
 profile\tprofile:base\tbase\tmacos,shared\tselected
 profile\tprofile:omarchy\tomarchy\tarch/omarchy\tavailable
 expectation\tprofile:base\tany\tshared\tnvim\teditor\tprogram\tprogram:neovim\tnvim
+expectation\tprofile:base\tdarwin\tmacos\tghostty-darwin\tterminal\tprogram\tprogram:ghostty\tghostty
+expectation\tprofile:omarchy\tlinux\tarch/omarchy\thyprland\twindow-manager\tprogram\tprogram:hyprland\tHyprland
+program\tprogram:ghostty\tmissing\tunavailable\tunavailable\tunavailable\tunavailable
+program\tprogram:hyprland\tpresent\tunavailable\tunavailable\tunavailable\tunavailable
 program\tprogram:neovim\tpresent\tunavailable\tunavailable\tunavailable\tunavailable
 status\tcomplete
 `;
 
 describe("workstation-source-v1 parser", () => {
   test("parses source-owned mappings without promoting executable presence", () => {
-    expect(parseWorkstationSource(source)).toMatchObject({
+    const result = parseWorkstationSource(source);
+    expect(result).toMatchObject({
       _tag: "Success",
       success: {
         platform: { name: "linux", architecture: "x86_64" },
         omarchy: { availability: "observed", version: "4.2.1", generation: "omarchy-4" },
         profiles: [{ id: "profile:base", selected: true }, { id: "profile:omarchy", selected: false }],
-        evidence: [{ id: "program:neovim", availability: "present", version: "unavailable", configuration: "unavailable", dotfileStow: "unavailable", acquisition: "unavailable" }],
       },
     });
+    if (Result.isFailure(result)) throw result.failure;
+    expect(result.success.evidence.find(({ id }) => id === "program:neovim")).toEqual({ id: "program:neovim", kind: "program", availability: "present", version: "unavailable", configuration: "unavailable", dotfileStow: "unavailable", acquisition: "unavailable" });
   });
 
   test("rejects unsupported, sparse, duplicate, unordered, private, and bounded records", () => {
@@ -48,9 +54,48 @@ describe("workstation-source-v1 parser", () => {
     ]) expect(Result.isFailure(parseWorkstationSource(value))).toBe(true);
   });
 
-  test("parses unavailable and future Omarchy authority without inventing generation support", () => {
+  test("validates exact Omarchy SemVer generation authority", () => {
     expect(parseWorkstationSource(source.replace("observed\t4.2.1\tomarchy-4", "unavailable\ttimeout\t-"))).toMatchObject({ _tag: "Success", success: { omarchy: { availability: "unavailable", reason: "timeout" } } });
-    expect(parseWorkstationSource(source.replace("4.2.1\tomarchy-4", "5.0.0\tunknown"))).toMatchObject({ _tag: "Success", success: { omarchy: { availability: "observed", version: "5.0.0", generation: "unknown" } } });
+    expect(parseWorkstationSource(source.replace("observed\t4.2.1\tomarchy-4", "unavailable\tunsupported-major\t-"))).toMatchObject({ _tag: "Success", success: { omarchy: { availability: "unavailable", reason: "unsupported-major" } } });
+    expect(parseWorkstationSource(source.replace("4.2.1", "4.2.1-rc.1+build.5"))).toMatchObject({ _tag: "Success", success: { omarchy: { availability: "observed", version: "4.2.1-rc.1+build.5", generation: "omarchy-4" } } });
+    for (const value of [
+      source.replace("4.2.1\tomarchy-4", "3.2.1\tomarchy-4"),
+      source.replace("4.2.1\tomarchy-4", "4.2.1\tomarchy-3"),
+      source.replace("4.2.1\tomarchy-4", "5.0.0\tunknown"),
+      source.replace("unavailable", "../../private"),
+    ]) expect(Result.isFailure(parseWorkstationSource(value))).toBe(true);
+  });
+
+  test("rejects selector and relationship contradictions", () => {
+    for (const value of [
+      source.replace("macos,shared", "shared,shared"),
+      source.replace("macos,shared", "shared,macos"),
+      source.replace("macos,shared", "macos,,shared"),
+      source.replace("macos,shared", "macos,"),
+      source.replace("profile:omarchy\tomarchy", "profile:omarchy\tbase"),
+      source.replace("arch/omarchy\tavailable", "shared\tavailable"),
+      source.replace(/^expectation\tprofile:base\tdarwin.*\n/m, ""),
+      source.replace(/^program\tprogram:ghostty.*\n/m, ""),
+      source.replace("profile:omarchy\tlinux\tarch/omarchy", "profile:base\tlinux\tarch/omarchy"),
+    ]) expect(Result.isFailure(parseWorkstationSource(value))).toBe(true);
+  });
+
+  test("returns recursively frozen detached observations", () => {
+    const result = parseWorkstationSource(source);
+    expect(Result.isSuccess(result)).toBe(true);
+    if (Result.isFailure(result)) throw result.failure;
+    const observation = result.success;
+    expect([observation, observation.platform, observation.omarchy, observation.profiles, observation.profiles[0], observation.profiles[0]?.dotfileSelectors, observation.expectations, observation.expectations[0], observation.evidence, observation.evidence[0]].every(Object.isFrozen)).toBe(true);
+    expect(() => (observation.profiles as unknown as Array<(typeof observation.profiles)[number]>).push(observation.profiles[0]!)).toThrow(TypeError);
+    expect(() => ((observation.profiles[0]!.dotfileSelectors as string[])[0] = "changed")).toThrow(TypeError);
+    const reparsed = parseWorkstationSource(source);
+    expect(Result.isSuccess(reparsed) && reparsed.success.profiles[0]?.dotfileSelectors).toEqual(["macos", "shared"]);
+  });
+
+  test("enforces output and line bounds in encoded UTF-8 bytes", () => {
+    const overlongLine = source.replace("status\tcomplete\n", `unknown\t${"é".repeat(253)}\nstatus\tcomplete\n`);
+    const oversizedOutput = `${source}${"é".repeat(131000)}`;
+    for (const value of [overlongLine, oversizedOutput]) expect(parseWorkstationSource(value)).toMatchObject({ _tag: "Failure", failure: { code: "source-bounds-or-privacy" } });
   });
 
   test("retains BRF platform and architecture as plan context", () => {

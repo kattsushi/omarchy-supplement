@@ -150,8 +150,16 @@ test_acceptance_gap_contract() {
 }
 
 test_workstation_source_contract() {
-	local before after contract="$FIXTURE/workstation-source-v1.tsv" output
+	local before after contract="$FIXTURE/workstation-source-v1.tsv" output repo_before repo_after index_before index_after status_before status_after
+	repo_fingerprint() {
+		while IFS= read -r -d '' tracked_file; do
+			if [[ -L $ROOT/$tracked_file ]]; then printf 'link\t%s\t%s\n' "$tracked_file" "$(readlink "$ROOT/$tracked_file")"; else printf 'file\t%s\t' "$tracked_file"; sha256sum "$ROOT/$tracked_file" | awk '{print $1}'; fi
+		done < <(git -C "$ROOT" ls-files -z)
+	}
 	before=$(tree_fingerprint "$HOME")
+	repo_before=$(repo_fingerprint | sha256sum | awk '{print $1}')
+	index_before=$(git -C "$ROOT" write-tree)
+	status_before=$(git -C "$ROOT" status --porcelain=v1 --untracked-files=all)
 	env BOOTSTRAP_TEST_OMARCHY_OBSERVATION='Omarchy 4.2.1' BOOTSTRAP_TEST_PRESENT_PROBES='nvim,starship,tmux,zsh' \
 		"$ROOT/bin/workstation-bootstrap" observe --profile profile:base >"$FIXTURE/source-one"
 	after=$(tree_fingerprint "$HOME")
@@ -159,6 +167,10 @@ test_workstation_source_contract() {
 	cp "$FIXTURE/source-one" "$FIXTURE/source-first"
 	env BOOTSTRAP_TEST_OMARCHY_OBSERVATION='Omarchy 4.2.1' BOOTSTRAP_TEST_PRESENT_PROBES='nvim,starship,tmux,zsh' \
 		"$ROOT/bin/workstation-bootstrap" observe --profile profile:base >"$FIXTURE/source-two"
+	repo_after=$(repo_fingerprint | sha256sum | awk '{print $1}')
+	index_after=$(git -C "$ROOT" write-tree)
+	status_after=$(git -C "$ROOT" status --porcelain=v1 --untracked-files=all)
+	[[ $repo_before == "$repo_after" && $index_before == "$index_after" && $status_before == "$status_after" ]] || fail "source observation changed repository, index, or status"
 	cmp "$FIXTURE/source-first" "$FIXTURE/source-two" || fail "source observation was not deterministic"
 	assert_file_contains "$FIXTURE/source-one" $'schema\tworkstation-source-v1' || return 1
 	assert_file_contains "$FIXTURE/source-one" $'platform\tlinux\tx86_64' || return 1
@@ -172,6 +184,10 @@ test_workstation_source_contract() {
 	assert_file_contains "$FIXTURE/source-one" $'status\tcomplete' || return 1
 	assert_file_not_contains "$FIXTURE/source-one" '3.8.4' || return 1
 	assert_file_not_contains "$FIXTURE/source-one" "$HOME" || return 1
+	awk -F '\t' '$1=="profile" {n=split($4,a,","); for(i=1;i<=n;i++) owner[a[i]]=$2; next} $1=="source" {print "expectation\t" owner[$2] "\t" $3 "\t" $2 "\t" $4 "\t" $5 "\t" $6 "\t" $7 "\t" $8}' "$ROOT/bootstrap/contracts/workstation-source-v1.tsv" | sort >"$FIXTURE/expected-mappings"
+	awk -F '\t' '$1=="expectation"' "$FIXTURE/source-one" >"$FIXTURE/actual-mappings"
+	cmp "$FIXTURE/expected-mappings" "$FIXTURE/actual-mappings" || fail "emitted expectations do not exactly cover manifest mappings"
+	awk -F '\t' 'FNR==NR {if ($1=="program" || $1=="dependency") evidence[$1 FS $2]++; next} $1=="expectation" {expectations++; if (evidence[$7 FS $8]!=1) exit 1} END {if (!expectations) exit 1}' "$FIXTURE/source-one" "$FIXTURE/source-one" || fail "expectation/evidence relationships are incomplete or duplicated"
 
 	cp "$ROOT/bootstrap/contracts/workstation-source-v1.tsv" "$contract"
 	printf 'source\tshared\tany\tunknown-package\tunknown\tprogram\tprogram:unknown\tnone\n' >>"$contract"
@@ -187,15 +203,19 @@ test_workstation_source_contract() {
 	assert_file_contains "$FIXTURE/source-platform" $'profile\tprofile:base\tbase\tmacos,shared\tavailable' || return 1
 	assert_file_contains "$FIXTURE/source-platform" $'profile\tprofile:omarchy\tomarchy\tarch/omarchy\tselected' || return 1
 
-	for observation in 'Omarchy 3.9.0' 'Omarchy 4.0.0' 'Omarchy 5.1.0' missing timeout 'release candidate' $'Omarchy 3.9.0\nOmarchy 4.0.0'; do
+	for observation in 'Omarchy 3.9.0' 'Omarchy 4.0.0-rc.1+build.5' 'Omarchy 5.1.0' missing timeout 'release candidate'; do
 		output=$(env BOOTSTRAP_TEST_OMARCHY_OBSERVATION="$observation" "$ROOT/bin/workstation-bootstrap" observe --profile profile:base)
 		case $observation in
 			'Omarchy 3.9.0') [[ $output == *$'omarchy\tobserved\t3.9.0\tomarchy-3'* ]] || fail "Omarchy 3 classification failed";;
-			'Omarchy 4.0.0') [[ $output == *$'omarchy\tobserved\t4.0.0\tomarchy-4'* ]] || fail "Omarchy 4 classification failed";;
-			'Omarchy 5.1.0') [[ $output == *$'omarchy\tobserved\t5.1.0\tunknown'* ]] || fail "future Omarchy classification failed";;
+			'Omarchy 4.0.0-rc.1+build.5') [[ $output == *$'omarchy\tobserved\t4.0.0-rc.1+build.5\tomarchy-4'* ]] || fail "full SemVer classification failed";;
+			'Omarchy 5.1.0') [[ $output == *$'omarchy\tunavailable\tunsupported-major\t-'* ]] || fail "future Omarchy was promoted";;
 			missing|timeout) [[ $output == *$'omarchy\tunavailable\t'"$observation"$'\t-'* ]] || fail "$observation classification failed";;
 			*) [[ $output == *$'omarchy\tunavailable\tmalformed-or-ambiguous\t-'* ]] || fail "malformed/ambiguous classification failed";;
 		esac
+	done
+	for observation in 'Omarchy 01.2.3' 'Omarchy 1.02.3' 'Omarchy 1.2.03' 'Omarchy 1.2.3.4' 'Omarchy v1.2.3' 'Omarchy x1.2.3' 'Omarchy 1.2.3x' 'Omarchy 1.2.3-01' 'Omarchy 1.2.3+' 'Omarchy 3.9.0 and 4.0.0' $'Omarchy 3.9.0\nOmarchy 4.0.0' 'Omarchy ４.２.３'; do
+		output=$(env BOOTSTRAP_TEST_OMARCHY_OBSERVATION="$observation" "$ROOT/bin/workstation-bootstrap" observe --profile profile:base)
+		[[ $output == *$'omarchy\tunavailable\tmalformed-or-ambiguous\t-'* ]] || fail "malformed SemVer was promoted: $observation"
 	done
 	output=$(env BOOTSTRAP_TEST_OMARCHY_OBSERVATION="$(printf '%0513d' 0)" "$ROOT/bin/workstation-bootstrap" observe --profile profile:base)
 	[[ $output == *$'omarchy\tunavailable\toutput-limit\t-'* ]] || fail "Omarchy output limit was not typed unavailable"

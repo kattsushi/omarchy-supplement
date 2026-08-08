@@ -20,7 +20,7 @@ if [[ $1 == observe ]]; then
 	set -e
 	if [[ $rc -eq 124 ]]; then printf 'schema\tworkstation-source-v1\nstatus\trefused\tSOURCE_TIMEOUT\n'; exit "$BOOTSTRAP_REFUSAL"; fi
 	if [[ $rc -ne 0 && $rc -ne 2 ]]; then printf 'schema\tworkstation-source-v1\nstatus\trefused\tSOURCE_OBSERVATION_FAILED\n'; exit "$BOOTSTRAP_REFUSAL"; fi
-	if ((${#payload} > 262143)) || [[ $(wc -l <<<"$payload") -gt 256 ]] || ! awk 'length($0)>512 {exit 1}' <<<"$payload"; then printf 'schema\tworkstation-source-v1\nstatus\trefused\tSOURCE_BOUNDS\n'; exit "$BOOTSTRAP_REFUSAL"; fi
+	if [[ $(printf '%s' "$payload" | wc -c) -gt 262143 || $(wc -l <<<"$payload") -gt 256 ]] || ! LC_ALL=C awk 'length($0)>512 {exit 1}' <<<"$payload"; then printf 'schema\tworkstation-source-v1\nstatus\trefused\tSOURCE_BOUNDS\n'; exit "$BOOTSTRAP_REFUSAL"; fi
 	printf '%s\n' "$payload"
 	exit "$rc"
 fi
