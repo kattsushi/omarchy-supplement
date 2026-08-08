@@ -6,7 +6,9 @@ import { createReadOnlyRuntime } from "../../composition/runtime.js";
 import { readOnlyLayer, ReadOnlyRequestService } from "../../composition/read-only.js";
 import { createWorkstationTuiApp } from "./components/workstation-tui-app.js";
 
-export type TuiRendererFactory = () => Promise<CliRenderer>;
+export type TuiRenderer = Pick<CliRenderer, "width" | "isDestroyed" | "root" | "keyInput" | "on" | "off" | "destroy">;
+export type TuiRendererFactory = () => Promise<TuiRenderer>;
+type TuiAppFactory = typeof createWorkstationTuiApp;
 
 const initialRequest: AgentRequest = {
   version: "AgentRequestV1",
@@ -48,36 +50,83 @@ const frameFor = (result: PublicResultV2, app: ReturnType<typeof createWorkstati
 
 export const runWorkstationTui = async (createRenderer: TuiRendererFactory = createCliRenderer): Promise<void> => {
   const runtime = createReadOnlyRuntime(readOnlyLayer);
-  let renderer: CliRenderer | undefined;
-  let quit = (): void => {};
   try {
     const result = await runtime.runPromise(Effect.gen(function*() {
       return yield* (yield* ReadOnlyRequestService).dispatch(initialRequest);
     }));
     if (result.version !== "PublicResultV2") throw new Error("TUI requires a PublicResultV2 read-only projection");
+    await runRendererLifecycle(result, await createRenderer());
+  } catch (error) {
+    if (error instanceof TuiLifecycleError) throw error;
+    throw new Error("Workstation TUI failed to start");
+  } finally { await runtime.dispose(); }
+};
 
-    renderer = await createRenderer();
-    const app = createWorkstationTuiApp(result, renderer.width);
+export class TuiLifecycleError extends Error {
+  constructor() { super("Workstation TUI lifecycle failed"); }
+}
+
+export const runRendererLifecycle = async (
+  result: PublicResultV2,
+  renderer: TuiRenderer,
+  createApp: TuiAppFactory = createWorkstationTuiApp,
+): Promise<void> => {
+  let externallyDestroyed = renderer.isDestroyed;
+  let acceptingEvents = true;
+  let keyAttached = false;
+  let destroyAttached = false;
+  let failure: unknown;
+  let onKey: (key: KeyEvent) => void = () => {};
+  let onDestroy = (): void => {};
+
+  try {
+    const app = createApp(result, renderer.width);
     renderer.root.add(Text({ id: "workstation-screen", content: frameFor(result, app), width: "100%", height: "100%" }));
     const screen = renderer.root.getRenderable("workstation-screen") as TextRenderable;
 
-    await new Promise<void>((resolve) => {
-      quit = resolve;
-      const onKey = (key: KeyEvent): void => {
-        const name = keyName(key);
-        if ((key.ctrl && name === "c") || name === "q" || (name === "Escape" && app.state().overlay === undefined)) return quit();
-        app.onKey(name);
-        screen.content = frameFor(result, app);
+    await new Promise<void>((resolve, reject) => {
+      let settled = false;
+      const settle = (error?: unknown): void => {
+        if (settled) return;
+        settled = true;
+        acceptingEvents = false;
+        if (error === undefined) resolve(); else reject(error);
       };
-      renderer!.keyInput.on("keypress", onKey);
-      process.once("SIGINT", quit);
-      process.once("SIGTERM", quit);
-      renderer!.once(CliRenderEvents.DESTROY, quit);
+      onDestroy = () => { externallyDestroyed = true; settle(); };
+      onKey = (key) => {
+        if (!acceptingEvents || renderer.isDestroyed) return;
+        try {
+          const name = keyName(key);
+          if (key.ctrl && name === "c") {
+            acceptingEvents = false;
+            process.nextTick(settle);
+            return;
+          }
+          if (name === "q" || (name === "Escape" && app.state().overlay === undefined)) return settle();
+          app.onKey(name);
+          if (!acceptingEvents || renderer.isDestroyed) return;
+          screen.content = frameFor(result, app);
+        } catch (error) { settle(error); }
+      };
+      try {
+        renderer.keyInput.on("keypress", onKey);
+        keyAttached = true;
+        renderer.on(CliRenderEvents.DESTROY, onDestroy);
+        destroyAttached = true;
+        if (renderer.isDestroyed) onDestroy();
+      } catch (error) { settle(error); }
     });
-  } finally {
-    process.removeListener("SIGINT", quit);
-    process.removeListener("SIGTERM", quit);
-    renderer?.destroy();
-    await runtime.dispose();
+  } catch (error) { failure = error; }
+  finally {
+    acceptingEvents = false;
+    try {
+      if (keyAttached) renderer.keyInput.off("keypress", onKey);
+      if (destroyAttached) renderer.off(CliRenderEvents.DESTROY, onDestroy);
+    } catch (error) { failure ??= error; }
+    if (!externallyDestroyed && !renderer.isDestroyed) {
+      externallyDestroyed = true;
+      try { renderer.destroy(); } catch (error) { failure ??= error; }
+    }
   }
+  if (failure !== undefined) throw new TuiLifecycleError();
 };
