@@ -21,6 +21,7 @@ import { createPresentationSession, type PresentationAdapter } from "../../../sr
 import { WorkstationRegistryProvider } from "../../../src/presentation/hooks/use-workstation-projection.js";
 import { projectRequestState } from "../../../src/presentation/view-models/request-state.js";
 import { ProgramId } from "../../../src/domain/states.js";
+import { projectPublicResultV2, type PublicResultV2 } from "../../../src/application/contracts/public-result.js";
 
 const request = Schema.decodeUnknownSync(AgentRequestSchema)({
   version: "AgentRequestV1",
@@ -162,13 +163,29 @@ describe("Effect Atom service projection", () => {
 
     session.select("program:neovim");
     session.navigate("programs");
+    session.navigate("platform-policy");
+    session.navigate("profiles");
     session.filter("neovim");
 
     expect(session.interaction()).toEqual({
       selectedId: "program:neovim",
-      navigation: "programs",
+      navigation: "profiles",
       filter: "neovim",
     });
+  });
+
+  test("stores the same V2 semantic projection received by JSON without adapter reconstruction", async () => {
+    const result: PublicResultV2 = {
+      version: "PublicResultV2", operation: "assess_workstation", status: "completed", correlationId: "request:atom-test",
+      payload: { kind: "assessment", platform: "macos", policyId: "policy:macos", profiles: ["profile:shared"], programs: [{ programId: "program:neovim", packageState: "present", configurationState: "ready", dotfileStowState: "stow-ready" }], backups: [] },
+      blockers: [], evidence: [{ evidenceId: "evidence:platform", strength: "structural", summaryCode: "platform-observed" }], nextActions: ["inspect-results"],
+    };
+    const session = createPresentationSession({ invoke: async () => projectPublicResultV2(result) });
+
+    await session.run(request);
+
+    expect(session.state().result).toBe(result);
+    expect(projectRequestState(session.state()).result).toBe(result);
   });
 
   test("invokes a deterministic typed read-only service through its ManagedRuntime adapter", async () => {
@@ -227,6 +244,17 @@ describe("Effect Atom service projection", () => {
 
     expect(assessment.programs).toHaveLength(1);
     expect(assessment.programs[0]?.programId).toBe(programId);
+    const results = await runtime.runPromise(Effect.gen(function*() {
+      const service = yield* ReadOnlyRequestService;
+      return yield* Effect.all([
+        service.dispatch(request),
+        service.dispatch(Schema.decodeUnknownSync(AgentRequestSchema)({ ...request, operation: "plan_package_install", input: { programId, fallbackOptIn: false } })),
+      ]);
+    }));
+    expect(results).toMatchObject([
+      { version: "PublicResultV2", operation: "assess_workstation", payload: { kind: "assessment" } },
+      { version: "PublicResultV2", operation: "plan_package_install", status: "refused", payload: { operation: "plan_package_install" } },
+    ]);
     await runtime.dispose();
   });
 

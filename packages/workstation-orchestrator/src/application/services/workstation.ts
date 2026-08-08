@@ -36,7 +36,7 @@ export const PackageAcquisitionRequest = Schema.Struct({ programId: ProgramId, f
 export type PackageAcquisitionRequest = typeof PackageAcquisitionRequest.Type;
 
 export class PlanningRefused extends Data.TaggedError("PlanningRefused")<{
-  readonly code: "provider-missing" | "package-mapping-missing" | "package-mapping-unsafe" | "fallback-not-opted-in";
+  readonly code: "provider-missing" | "package-mapping-missing" | "package-mapping-unsafe" | "fallback-not-opted-in" | "native-evidence-unverified";
   readonly evidenceIds: readonly string[];
 }> {}
 
@@ -108,6 +108,7 @@ export class PlanPackageAcquisition extends Context.Service<
             Match.when("present", () => Effect.succeed({ provider: primary, providerRole: "primary" as const })),
             Match.orElse(() => Match.value({ platform: facts.platform, fallbackOptIn: request.fallbackOptIn }).pipe(
               Match.when({ platform: "linux", fallbackOptIn: true }, () => Effect.gen(function*() {
+                if (selectCompatibility(facts).state !== "supported") return refused("native-evidence-unverified", facts.evidence.map((record) => record.evidenceId));
                 const fallback = yield* providers.discover("homebrew");
                 return yield* Match.value(fallback.availability).pipe(
                   Match.when("present", () => Effect.succeed({ provider: "homebrew" as const, providerRole: "fallback" as const })),
