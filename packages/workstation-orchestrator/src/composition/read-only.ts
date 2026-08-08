@@ -39,10 +39,11 @@ export const makeReadOnlyLayer = <R, E>(ports: Layer.Layer<ReadOnlyPorts, E, R>)
   const registry = Layer.provide(Layer.effect(OperationRegistry, Effect.gen(function*() {
     const digest = yield* PlanDigestService;
     const planning = yield* PlanPackageAcquisition;
+    const backupStatus = yield* BackupStatusPort;
     return makeOperationRegistry(makeReadOnlyOperationHandlers(yield* AssessWorkstation, {
       plan: (request) => planning.plan(request).pipe(Effect.provideService(PlanDigestService, digest)),
-    }));
-  })), Layer.merge(services, PlanDigestService.layer));
+    }, { backups: () => backupStatus.visibility }));
+  })), Layer.mergeAll(services, ports, PlanDigestService.layer));
   const requestService = Layer.provide(ReadOnlyRequestService.layer, Layer.provide(boundAgentRequestDispatcherLayer, registry));
   return Layer.mergeAll(services, requestService);
 };

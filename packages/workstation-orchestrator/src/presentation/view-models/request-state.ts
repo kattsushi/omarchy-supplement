@@ -1,4 +1,4 @@
-import type { PublicResult } from "../../application/contracts/public-result.js";
+import { sanitizePublicResultV2, type PublicResult } from "../../application/contracts/public-result.js";
 
 export type RequestLifecycle = "idle" | "loading" | "completed" | "refused" | "failed";
 
@@ -31,7 +31,7 @@ const lifecycleByStatus = {
 export const projectResult = (result: PublicResult, refreshIdentity: number): RequestState => ({
   lifecycle: lifecycleByStatus[result.status],
   refreshIdentity,
-  result,
+  result: result.version === "PublicResultV2" ? sanitizePublicResultV2(result) : result,
 });
 
 export const projectFailure = (refreshIdentity: number): RequestState => ({
