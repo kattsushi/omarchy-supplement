@@ -14,6 +14,7 @@ const routeByName = {
 } as const satisfies Record<string, CliRoute>;
 
 export const classifyRoute = (argv: readonly string[]): CliRoute => {
-  if (argv.length === 0 || argv.includes("--help") || argv.includes("-h")) return { kind: "help" };
+  if (argv.length === 0 || (argv.length === 1 && (argv[0] === "--help" || argv[0] === "-h"))) return { kind: "help" };
+  if (argv.length !== 1) return { kind: "invalid" };
   return routeByName[argv[0] as keyof typeof routeByName] ?? { kind: "invalid" };
 };

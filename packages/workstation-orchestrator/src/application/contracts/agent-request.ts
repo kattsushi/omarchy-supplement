@@ -6,6 +6,7 @@ const RequestId = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(
 const TimeoutSeconds = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 120 })).pipe(Schema.withDecodingDefault(Effect.succeed(30)));
 const EmptyInput = Schema.Struct({});
 const ProgramInput = Schema.Struct({ programId: ProgramId });
+const BackupInput = Schema.Struct({ backupId: Schema.String.check(Schema.isPattern(/^backup:[A-Za-z0-9_-]+$/)) });
 
 export const AgentOperation = Schema.Literals([
   "assess_workstation", "list_profiles", "plan_package_install", "show_evidence", "show_backup", "restore_guidance",
@@ -17,8 +18,8 @@ export const AgentRequest = Schema.Union([
   Schema.Struct({ version: Schema.Literal("AgentRequestV1"), requestId: RequestId, operation: Schema.Literal("list_profiles"), input: EmptyInput, timeoutSeconds: TimeoutSeconds }),
   Schema.Struct({ version: Schema.Literal("AgentRequestV1"), requestId: RequestId, operation: Schema.Literal("plan_package_install"), input: Schema.Struct({ programId: ProgramId, fallbackOptIn: Schema.Boolean }), timeoutSeconds: TimeoutSeconds }),
   Schema.Struct({ version: Schema.Literal("AgentRequestV1"), requestId: RequestId, operation: Schema.Literal("show_evidence"), input: ProgramInput, timeoutSeconds: TimeoutSeconds }),
-  Schema.Struct({ version: Schema.Literal("AgentRequestV1"), requestId: RequestId, operation: Schema.Literal("show_backup"), input: EmptyInput, timeoutSeconds: TimeoutSeconds }),
-  Schema.Struct({ version: Schema.Literal("AgentRequestV1"), requestId: RequestId, operation: Schema.Literal("restore_guidance"), input: ProgramInput, timeoutSeconds: TimeoutSeconds }),
+  Schema.Struct({ version: Schema.Literal("AgentRequestV1"), requestId: RequestId, operation: Schema.Literal("show_backup"), input: BackupInput, timeoutSeconds: TimeoutSeconds }),
+  Schema.Struct({ version: Schema.Literal("AgentRequestV1"), requestId: RequestId, operation: Schema.Literal("restore_guidance"), input: BackupInput, timeoutSeconds: TimeoutSeconds }),
 ]);
 export type AgentRequest = typeof AgentRequest.Type;
 export const defaultTimeoutSeconds = 30;

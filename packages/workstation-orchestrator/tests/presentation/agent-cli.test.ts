@@ -4,6 +4,7 @@ import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import { AgentRequest } from "../../src/application/contracts/agent-request.js";
 import { operationNames, unavailableOperationHandlers, unsupportedResult } from "../../src/application/contracts/operation-registry.js";
+import { decodePublicResult, projectPublicResultV2, type PublicResultV2 } from "../../src/application/contracts/public-result.js";
 import { decodeAgentRequest } from "../../src/presentation/cli/agent-request-decoder.js";
 import { exitCodeFor, exitCodes } from "../../src/presentation/cli/exit-codes.js";
 import { encodePublicResult, maxResponseBytes } from "../../src/presentation/cli/public-result-encoder.js";
@@ -68,5 +69,35 @@ describe("deterministic agent CLI contract", () => {
     expect(classifyRoute(["agent"])).toEqual({ kind: "agent" });
     expect(classifyRoute(["tui"])).toEqual({ kind: "tui" });
     expect(classifyRoute(["--help"])).toEqual({ kind: "help" });
+    expect(classifyRoute(["agent", "extra"])).toEqual({ kind: "invalid" });
+  });
+
+  test("keeps V1 bytes frozen while decoding an explicit rich V2 result", () => {
+    const v1 = unsupportedResult("show_evidence", "request:abc");
+    expect(new TextDecoder().decode(encodePublicResult(v1))).toBe('{"blockers":[{"code":"operation-unsupported"}],"correlationId":"request:abc","evidence":[],"nextActions":[],"status":"unsupported","version":"PublicResultV1"}\n');
+    expect(decodePublicResult(v1)).toMatchObject({ version: "PublicResultV1", evidence: [] });
+
+    const v2: PublicResultV2 = {
+      version: "PublicResultV2", operation: "plan_package_install", status: "completed", correlationId: "request:abc",
+      payload: { kind: "plan", provider: "homebrew", providerRole: "primary", policyId: "policy:macos", planId: "plan:opaque", bindingDigest: "digest:opaque", confirmationRequired: true, acquisitionDoesNotVerifyConfiguration: true, acquisitionDoesNotVerifyDotfileStow: true },
+      blockers: [], evidence: [], nextActions: [],
+    };
+    expect(decodePublicResult(v2)).toEqual(v2);
+    expect(projectPublicResultV2(v2)).toEqual(v2);
+  });
+
+  test("projects every operation and outcome without normalizing rich semantics", () => {
+    const statuses = ["completed", "refused", "unsupported", "ambiguous", "stale", "invalid-request", "timed-out", "cancelled", "failed"] as const;
+    for (const operation of operationNames) for (const status of statuses) {
+      const result = projectPublicResultV2({
+        version: "PublicResultV2", operation, status, correlationId: "request:matrix",
+        payload: { kind: "unavailable", operation, reason: "service-not-implemented" },
+        blockers: [{ code: status === "completed" ? "operation-refused" : `operation-${status === "unsupported" ? "unsupported" : status === "invalid-request" ? "failed" : status}` }],
+        evidence: [], nextActions: [],
+      });
+      expect(result.operation).toBe(operation);
+      expect(result.status).toBe(status);
+      expect(result.payload).toMatchObject({ operation });
+    }
   });
 });

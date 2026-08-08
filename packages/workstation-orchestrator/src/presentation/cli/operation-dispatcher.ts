@@ -4,7 +4,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Match from "effect/Match";
 import type { AgentRequest } from "../../application/contracts/agent-request.js";
-import type { PublicResult } from "../../application/contracts/public-result.js";
+import type { PublicResult, PublicResultV2 } from "../../application/contracts/public-result.js";
 import { OperationRegistry } from "../../application/contracts/operation-registry.js";
 
 type FailureStatus = "failed" | "timed-out" | "cancelled";
@@ -15,10 +15,11 @@ const failureCode = {
   cancelled: "operation-cancelled",
 } as const satisfies Record<FailureStatus, "operation-failed" | "operation-timed-out" | "operation-cancelled">;
 
-const publicFailure = (request: AgentRequest, status: FailureStatus): PublicResult => ({
-  version: "PublicResultV1",
+const publicFailure = (request: AgentRequest, status: FailureStatus): PublicResultV2 => ({
+  version: "PublicResultV2", operation: request.operation,
   status,
   correlationId: request.requestId,
+  payload: { kind: "unavailable", operation: request.operation, reason: "source-unavailable" },
   blockers: [{ code: failureCode[status] }],
   evidence: [],
   nextActions: [],
@@ -48,6 +49,7 @@ export class AgentRequestDispatcher extends Context.Service<AgentRequestDispatch
 }) {
   static readonly layer = Layer.provide(Layer.effect(this, this.make), OperationRegistry.layer);
 }
+export const boundAgentRequestDispatcherLayer = Layer.effect(AgentRequestDispatcher, AgentRequestDispatcher.make);
 
 export const dispatchAgentRequest = (request: AgentRequest) => Effect.gen(function*() {
   const dispatcher = yield* AgentRequestDispatcher;
