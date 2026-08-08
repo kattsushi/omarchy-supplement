@@ -9,8 +9,21 @@ source "$ROOT/bootstrap/lib/resolve.sh"
 source "$ROOT/bootstrap/lib/state.sh"
 source "$ROOT/bootstrap/lib/plan.sh"
 source "$ROOT/bootstrap/lib/lifecycle.sh"
-usage() { bootstrap_error 'usage: workstation-bootstrap plan|check --profile NAME | apply --plan FILE --expect-hash sha256:HEX | verify --receipt FILE'; exit "$BOOTSTRAP_INVALID"; }
+usage() { bootstrap_error 'usage: workstation-bootstrap plan|check --profile NAME | observe --profile profile:NAME | apply --plan FILE --expect-hash sha256:HEX | verify --receipt FILE'; exit "$BOOTSTRAP_INVALID"; }
 [[ $# -gt 0 ]] || usage
+if [[ $1 == observe ]]; then
+	[[ $# -eq 3 && $2 == --profile && $3 =~ ^profile:[a-z0-9][a-z0-9._-]{0,63}$ ]] || usage
+	bootstrap_fixture_guard
+	set +e
+	payload=$(timeout 5s bash "$ROOT/bootstrap/lib/observe.sh" "$ROOT" "$3" 2>/dev/null)
+	rc=$?
+	set -e
+	if [[ $rc -eq 124 ]]; then printf 'schema\tworkstation-source-v1\nstatus\trefused\tSOURCE_TIMEOUT\n'; exit "$BOOTSTRAP_REFUSAL"; fi
+	if [[ $rc -ne 0 && $rc -ne 2 ]]; then printf 'schema\tworkstation-source-v1\nstatus\trefused\tSOURCE_OBSERVATION_FAILED\n'; exit "$BOOTSTRAP_REFUSAL"; fi
+	if ((${#payload} > 262143)) || [[ $(wc -l <<<"$payload") -gt 256 ]] || ! awk 'length($0)>512 {exit 1}' <<<"$payload"; then printf 'schema\tworkstation-source-v1\nstatus\trefused\tSOURCE_BOUNDS\n'; exit "$BOOTSTRAP_REFUSAL"; fi
+	printf '%s\n' "$payload"
+	exit "$rc"
+fi
 command=$1; shift; profiles=(); plan= receipt= expected=
 while (($#)); do case "$1" in
   --profile) (($# >= 2)) || usage; profiles+=("$2"); shift 2;;
