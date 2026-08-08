@@ -13,7 +13,7 @@ import {
   SourceEvidencePort,
 } from "../application/ports/workstation.js";
 import { AssessWorkstation, PlanPackageAcquisition } from "../application/services/workstation.js";
-import { AgentRequestDispatcher, boundAgentRequestDispatcherLayer } from "../presentation/cli/operation-dispatcher.js";
+import { AgentRequestDispatcher, boundAgentRequestDispatcherLayer, runAgentRequest } from "../presentation/cli/operation-dispatcher.js";
 import { makeOperationRegistry, makeReadOnlyOperationHandlers, OperationRegistry } from "../application/contracts/operation-registry.js";
 import type { AgentRequest } from "../application/contracts/agent-request.js";
 import type { PublicResult } from "../application/contracts/public-result.js";
@@ -79,9 +79,9 @@ export const makeSourceReadOnlyLayer = <R, E>(bridgeLayer: Layer.Layer<BashBridg
   Layer.effect(ReadOnlyRequestService, Effect.gen(function*() {
     const bridge = yield* BashBridge;
     return {
-      dispatch: (request: AgentRequest) => Effect.flatMap(Effect.result(bridge.source({ form: "observe", profile: "profile:base" })), (result) => Effect.gen(function*() {
+      dispatch: (request: AgentRequest) => runAgentRequest(request, Effect.flatMap(Effect.result(bridge.source({ form: "observe", profile: "profile:base" })), (result) => Effect.gen(function*() {
         return yield* (yield* ReadOnlyRequestService).dispatch(request);
-      }).pipe(Effect.provide(makeReadOnlyLayer(sourcePorts(result))))),
+      }).pipe(Effect.provide(makeReadOnlyLayer(sourcePorts(result)))))),
     };
   })),
   bridgeLayer,

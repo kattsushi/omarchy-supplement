@@ -19,6 +19,7 @@ import {
   SourceEvidencePort,
 } from "../../src/application/ports/workstation.js";
 import { makeReadOnlyLayer, makeSourceReadOnlyLayer, ReadOnlyRequestService } from "../../src/composition/read-only.js";
+import { makeReadOnlyOperationHandlers } from "../../src/application/contracts/operation-registry.js";
 import { makeReadOnlyObservationAdapters } from "../../src/infrastructure/read-only-observations/adapters.js";
 import { ProgramId } from "../../src/domain/states.js";
 import { createPresentationSession } from "../../src/presentation/atoms/request-session.js";
@@ -193,6 +194,67 @@ describe("production read-only composition semantics", () => {
     expect(composition).not.toMatch(/(?:infrastructure\/providers|composition\/mutation|PackageExecution|Executor|fetch|WebSocket|writeFile|mkdir|unlink|rename|bun:sqlite)/);
     expect(process).toContain('const sourceArgv = ["workstation-bootstrap", "observe", "--profile", "profile:base"] as const');
     expect(process.match(/Bun\.spawn/g)).toHaveLength(1);
+    expect(process).not.toMatch(/Response\(|\.text\(\)/);
     expect(process).not.toMatch(/(?:fetch|WebSocket|writeFile|mkdir|unlink|rename|provider|homebrew|omarchy pkg|stow)/i);
+  });
+
+  test("applies the production dispatcher timeout to a hanging source observation", async () => {
+    const bridge = Layer.succeed(BashBridge, {
+      source: () => Effect.never,
+      bootstrap: () => Effect.die("not-reachable"),
+      dotfiles: () => Effect.die("not-reachable"),
+    });
+    const result = await dispatch({ ...request("list_profiles", {}), timeoutSeconds: 1 }, makeSourceReadOnlyLayer(bridge));
+
+    expect(result).toMatchObject({ operation: "list_profiles", status: "timed-out", blockers: [{ code: "operation-timed-out" }] });
+  }, 2_000);
+
+  test("preserves production source cancellation as a public cancelled result", async () => {
+    const bridge = Layer.succeed(BashBridge, {
+      source: () => Effect.interrupt,
+      bootstrap: () => Effect.die("not-reachable"),
+      dotfiles: () => Effect.die("not-reachable"),
+    });
+    const result = await dispatch(request("list_profiles", {}), makeSourceReadOnlyLayer(bridge));
+
+    expect(result).toMatchObject({ operation: "list_profiles", status: "cancelled", blockers: [{ code: "operation-cancelled" }] });
+  });
+
+  test("preserves independent facts when one of multiple requested programs has no evidence", async () => {
+    const result = await dispatch(request("assess_workstation", { programIds: [neovim, missingProgram] }));
+
+    expect(result).toMatchObject({
+      status: "refused",
+      payload: {
+        kind: "assessment", platform: "linux", architecture: "x86_64", profiles: ["profile:base", "profile:omarchy"],
+        programs: [
+          { programId: neovim, packageState: "present", configurationState: "unverifiable", dotfileStowState: "unverifiable" },
+          { programId: missingProgram, packageState: "unverifiable", configurationState: "unverifiable", dotfileStowState: "unverifiable" },
+        ],
+      },
+    });
+    expect(result.evidence.map(({ summaryCode }) => summaryCode)).toEqual(["linux", "probe-failed", "present"]);
+    expect(result.blockers).toContainEqual({ code: "operation-refused" });
+  });
+
+  test.each([
+    [[{ policyDecision: "ambiguous" }, { policyDecision: "stale" }, { policyDecision: "refused" }], "ambiguous"],
+    [[{ policyDecision: "stale" }, { policyDecision: "refused" }], "stale"],
+    [[{ policyDecision: "refused" }], "refused"],
+    [[], "completed"],
+  ] as const)("uses explicit assessment status precedence for %j", async (blockers, status) => {
+    const handlers = makeReadOnlyOperationHandlers(
+      { assess: () => Effect.succeed({ compatibility: { platform: "linux" }, programs: [], evidence: [], backups: [], blockers, nextActions: [] }) },
+      { plan: () => Effect.die("not-reachable") },
+      { backups: () => Effect.succeed([]) },
+      {
+        platform: () => makeReadOnlyObservationAdapters(Result.succeed(source())).platform.facts,
+        profiles: () => makeReadOnlyObservationAdapters(Result.succeed(source())).profiles.inventory,
+        evidence: () => Effect.succeed([]),
+      },
+    );
+
+    const result = await Effect.runPromise(handlers.assess_workstation(request("assess_workstation", { programIds: [] })));
+    expect(result.status).toBe(status);
   });
 });

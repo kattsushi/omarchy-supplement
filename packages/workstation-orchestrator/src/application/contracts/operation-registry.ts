@@ -41,6 +41,11 @@ type ObservationService = {
   readonly profiles: () => Effect.Effect<ProfileInventory, unknown>;
   readonly evidence: () => Effect.Effect<readonly SourceEvidenceObservation[], unknown>;
 };
+const assessmentStatus = (blockers: readonly { readonly policyDecision: string }[]): PublicResultV2["status"] => blockers.some(({ policyDecision }) => policyDecision === "ambiguous")
+  ? "ambiguous"
+  : blockers.some(({ policyDecision }) => policyDecision === "stale")
+    ? "stale"
+    : blockers.length > 0 ? "refused" : "completed";
 
 const unavailableByOperation = {
   list_profiles: unavailable,
@@ -77,7 +82,7 @@ export const makeReadOnlyOperationHandlers = (assessment: AssessmentService, pla
   assess_workstation: (request) => request.operation !== "assess_workstation" ? unavailable(request) : Effect.map(Effect.all([
     assessment.assess(request.input.programIds), observations.platform(), observations.profiles(),
   ]), ([value, facts, inventory]): PublicResultV2 => ({
-      version: "PublicResultV2", operation: "assess_workstation", status: value.blockers.length === 0 ? "completed" : "refused", correlationId: request.requestId,
+      version: "PublicResultV2", operation: "assess_workstation", status: assessmentStatus(value.blockers), correlationId: request.requestId,
       payload: { kind: "assessment", platform: facts.platform, architecture: facts.architecture ?? "unknown", omarchy: facts.omarchyAvailability === "observed" && facts.omarchyVersion !== undefined ? { availability: "observed", version: facts.omarchyVersion, generation: facts.generation } : { availability: "unavailable", reason: facts.omarchyUnavailableReason ?? "source-unavailable" }, policyId: `policy:${value.compatibility.policyId ?? "unknown"}`, profiles: inventory.profiles.map(({ id }) => id), programs: value.programs.map((program: any) => ({ programId: program.programId, packageState: program.packageState, configurationState: program.configurationState, dotfileStowState: program.dotfileStowState })), backups: value.backups.map((backup: any) => backup.backupId ?? "backup:unavailable") },
       blockers: value.blockers.map((blocker: any) => ({ code: blocker.policyDecision === "ambiguous" ? "operation-ambiguous" : blocker.policyDecision === "stale" ? "operation-stale" : "operation-refused" })), evidence: value.evidence.map((record: any) => ({ evidenceId: record.evidenceId, strength: record.strength, summaryCode: record.summaryCode })), nextActions: value.nextActions.map((action: any) => action.reasonCode),
     })).pipe(Effect.catchCause(() => unavailable(request, "source-unavailable"))),
