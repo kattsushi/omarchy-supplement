@@ -32,6 +32,7 @@ export type WorkstationSource = {
   readonly expectations: readonly { readonly profileId: string; readonly platform: "any" | "darwin" | "linux"; readonly selector: string; readonly source: string; readonly concern: string; readonly kind: "program" | "dependency"; readonly id: string; readonly probe: string }[];
   readonly evidence: readonly { readonly kind: "program" | "dependency"; readonly id: string; readonly availability: "present" | "missing" | "unavailable"; readonly version: "unavailable"; readonly configuration: "unavailable"; readonly dotfileStow: "unavailable"; readonly acquisition: "unavailable" }[];
 };
+export type ParsedWorkstationSourceResult = Result.Result<WorkstationSource, InvalidContract | Refused | BashOperationalFailure>;
 
 const fingerprint = (text: string) => `fingerprint:${Array.from(text).reduce((hash, char) => Math.imul(hash ^ char.charCodeAt(0), 16777619), 2166136261).toString(16)}`;
 export const decodeDotfilesRequest = (input: unknown): Result.Result<DotfilesRequest, InvalidContract> => {
