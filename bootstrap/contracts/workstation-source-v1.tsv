@@ -1,0 +1,25 @@
+schema	workstation-source-map-v1
+profile	profile:base	base	macos,shared
+profile	profile:omarchy	omarchy	arch/omarchy
+source	arch/omarchy	linux	backgrounds	desktop-backgrounds	program	program:backgrounds	none
+source	arch/omarchy	linux	ghostty-linux	terminal	program	program:ghostty	ghostty
+source	arch/omarchy	linux	hyprland	window-manager	program	program:hyprland	Hyprland
+source	arch/omarchy	linux	hyprlock	screen-lock	program	program:hyprlock	hyprlock
+source	arch/omarchy	linux	hyprmocha	window-manager-theme	dependency	dependency:hyprland-theme	none
+source	arch/omarchy	linux	hyprpaper	wallpaper	program	program:hyprpaper	hyprpaper
+source	arch/omarchy	linux	mako	notifications	program	program:mako	mako
+source	arch/omarchy	linux	nvim	editor	program	program:neovim	nvim
+source	arch/omarchy	linux	polybar	status-bar	program	program:polybar	polybar
+source	arch/omarchy	linux	starship	prompt	program	program:starship	starship
+source	arch/omarchy	linux	tmux	multiplexer	program	program:tmux	tmux
+source	arch/omarchy	linux	waybar	status-bar	program	program:waybar	waybar
+source	arch/omarchy	linux	zshrc	shell	program	program:zsh	zsh
+source	macos	darwin	ghostty-darwin	terminal	program	program:ghostty	ghostty
+source	macos	darwin	nvim	editor	program	program:neovim	nvim
+source	macos	darwin	starship	prompt	program	program:starship	starship
+source	macos	darwin	tmux	multiplexer	program	program:tmux	tmux
+source	macos	darwin	zshrc	shell	program	program:zsh	zsh
+source	shared	any	nvim	editor	program	program:neovim	nvim
+source	shared	any	starship	prompt	program	program:starship	starship
+source	shared	any	tmux	multiplexer	program	program:tmux	tmux
+source	shared	any	zshrc	shell	program	program:zsh	zsh
