@@ -3,8 +3,9 @@ import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Match from "effect/Match";
+import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
-import { ProgramAssessment, ProgramNotReady, assessProgram, validateProgramReadiness } from "../../domain/assessment.js";
+import { ProgramAssessment, assessProgram } from "../../domain/assessment.js";
 import { CompatibilityDecision, selectCompatibility } from "../../domain/compatibility.js";
 import { EvidenceRecord } from "../../domain/evidence.js";
 import { createPlanBinding, PackagePlan, PlanBindingDigestFailure, PlanBindingInput, PlanDigestService } from "../../domain/plans.js";
@@ -68,7 +69,7 @@ const mappingRefusal = (selection: ProviderSelection, mapping: { readonly safe: 
 
 export class AssessWorkstation extends Context.Service<
   AssessWorkstation,
-  { readonly assess: (programIds: readonly (typeof ProgramId.Type)[]) => Effect.Effect<WorkstationAssessment, ObservationUnavailable | ProgramNotReady> }
+  { readonly assess: (programIds: readonly (typeof ProgramId.Type)[]) => Effect.Effect<WorkstationAssessment, ObservationUnavailable> }
 >()("AssessWorkstation", {
   make: Effect.gen(function*() {
     const platform = yield* PlatformFactsPort;
@@ -78,13 +79,16 @@ export class AssessWorkstation extends Context.Service<
       assess: (programIds) => Effect.gen(function*() {
         const facts = yield* platform.facts;
         const compatibility = selectCompatibility(facts);
-        const statuses = yield* Effect.forEach(programIds, evidenceStatus.forProgram);
-        const programs = yield* Effect.forEach(statuses, (status) => {
-          const assessment = assessProgram(status);
-          return Effect.fromResult(validateProgramReadiness(assessment));
+        const observations = yield* Effect.forEach(programIds, (programId) => Effect.result(evidenceStatus.forProgram(programId)));
+        const statuses = observations.map((result, index) => Result.isSuccess(result) ? result.success : {
+          programId: programIds[index]!, packageState: "unverifiable" as const, configurationState: "unverifiable" as const, dotfileStowState: "unverifiable" as const, evidence: [],
         });
-        const backups = yield* backupStatus.visibility;
-        const blockers = compatibilityBlockers[compatibility.state](facts.evidence.map((record) => record.evidenceId));
+        const programs = statuses.map(assessProgram);
+        const backups = yield* backupStatus.visibility.pipe(Effect.catch(() => Effect.succeed([])));
+        const blockers = [
+          ...compatibilityBlockers[compatibility.state](facts.evidence.map((record) => record.evidenceId)),
+          ...observations.filter(Result.isFailure).map(() => providerBlocker("native-evidence-unverified", [])),
+        ];
         return { compatibility, programs, evidence: [...facts.evidence, ...statuses.flatMap((status) => status.evidence)], backups, blockers, nextActions: blockers.map((blocker) => blocker.nextAction) };
       }),
     };

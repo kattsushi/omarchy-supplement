@@ -34,14 +34,10 @@ const linuxPorts = Layer.mergeAll(
 );
 
 describe("read-only workstation application services", () => {
-  it.effect("refuses a not-ready program assessment through ProgramNotReady without mutating anything", () => Effect.gen(function*() {
+  it.effect("retains a not-ready program assessment without mutating anything", () => Effect.gen(function*() {
     const assessor = yield* AssessWorkstation;
-    const result = yield* assessor.assess([programId]).pipe(
-    Effect.catchTag("ProgramNotReady", (error) => Effect.succeed(error)),
-    );
-    expect(result).toMatchObject({
-    _tag: "ProgramNotReady", programId, packageState: "missing", configurationState: "unverifiable", dotfileStowState: "unverifiable",
-    });
+    const result = yield* assessor.assess([programId]);
+    expect(result.programs[0]).toMatchObject({ programId, packageState: "missing", configurationState: "unverifiable", dotfileStowState: "unverifiable", ready: false });
   }).pipe(Effect.provide(Layer.provide(AssessWorkstation.layer, ports))));
 
   it.effect("plans macOS Homebrew as primary and fails closed for unsafe mappings", () => Effect.gen(function*() {

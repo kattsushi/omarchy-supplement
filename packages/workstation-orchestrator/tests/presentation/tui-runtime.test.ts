@@ -51,7 +51,7 @@ describe("read-only TUI runtime", () => {
     const { stdout } = await execFileAsync("bun", ["tests/presentation/tui-runtime-smoke.ts"], { cwd: process.cwd(), timeout: 10_000 });
     expect(JSON.parse(stdout)).toEqual({
       title: true,
-      unavailable: true,
+      usefulSource: true,
       navigated: true,
       destroyCalls: [1, 1, 1, 1],
       exactDestroy: true,

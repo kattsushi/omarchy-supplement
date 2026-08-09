@@ -17,6 +17,8 @@ const assessment: PublicResultV2 = {
   payload: {
     kind: "assessment",
     platform: "macos",
+    architecture: "aarch64",
+    omarchy: { availability: "unavailable", reason: "not-applicable" },
     policyId: "policy:macos",
     profiles: ["profile:shared"],
     programs: [
@@ -84,7 +86,8 @@ describe("TUI presentation foundation", () => {
     const presentation = createTuiPresentation(assessment, 72);
 
     expect(presentation.layout).toBe("stacked");
-    expect(presentation.views[0]).toMatchObject({ role: "region", accessibleLabel: "Overview", items: ["assess_workstation", "completed"] });
+    expect(presentation.views[0]).toMatchObject({ role: "region", accessibleLabel: "Overview" });
+    expect(presentation.views[0]?.items).toEqual(expect.arrayContaining(["assess_workstation", "completed", "macos", "aarch64", "profile:shared"]));
     expect(workstationTheme).toEqual(expect.objectContaining({ foreground: "#e8edf2", accent: "#79c0ff" }));
   });
 

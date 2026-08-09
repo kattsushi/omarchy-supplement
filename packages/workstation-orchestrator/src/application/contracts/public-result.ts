@@ -7,7 +7,7 @@ export const PublicCode = Schema.Literals(["invalid-request", "operation-unsuppo
 export type PublicCode = typeof PublicCode.Type;
 const CorrelationId = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128), Schema.isPattern(/^request:[A-Za-z0-9_-]+$/));
 export const SafeText = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256), Schema.isPattern(/^[A-Za-z0-9 .,:_-]+$/));
-const OpaqueId = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128), Schema.isPattern(/^[a-z]+:[A-Za-z0-9_-]+$/));
+const OpaqueId = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128), Schema.isPattern(/^[a-z]+(?::[A-Za-z0-9_-]+)+$/));
 const Blockers = Schema.Array(Schema.Struct({ code: PublicCode })).check(Schema.isMaxLength(64));
 const NextActions = Schema.Array(SafeText).check(Schema.isMaxLength(64));
 
@@ -20,7 +20,11 @@ export type PublicResultV1 = typeof PublicResultV1.Type;
 
 const UnavailablePayload = Schema.Struct({ kind: Schema.Literal("unavailable"), operation: AgentOperation, reason: Schema.Literals(["service-not-implemented", "source-unavailable"]) });
 const ProgramState = Schema.Struct({ programId: OpaqueId, packageState: SafeText, configurationState: SafeText, dotfileStowState: SafeText });
-const AssessmentPayload = Schema.Struct({ kind: Schema.Literal("assessment"), platform: SafeText, policyId: OpaqueId, profiles: Schema.Array(OpaqueId).check(Schema.isMaxLength(64)), programs: Schema.Array(ProgramState).check(Schema.isMaxLength(64)), backups: Schema.Array(OpaqueId).check(Schema.isMaxLength(64)) });
+const OmarchyObservation = Schema.Union([
+  Schema.Struct({ availability: Schema.Literal("observed"), version: SafeText, generation: SafeText }),
+  Schema.Struct({ availability: Schema.Literal("unavailable"), reason: SafeText }),
+]);
+const AssessmentPayload = Schema.Struct({ kind: Schema.Literal("assessment"), platform: SafeText, architecture: SafeText, omarchy: OmarchyObservation, policyId: OpaqueId, profiles: Schema.Array(OpaqueId).check(Schema.isMaxLength(64)), programs: Schema.Array(ProgramState).check(Schema.isMaxLength(64)), backups: Schema.Array(OpaqueId).check(Schema.isMaxLength(64)) });
 const ProfilesPayload = Schema.Struct({ kind: Schema.Literal("profiles"), profiles: Schema.Array(OpaqueId).check(Schema.isMaxLength(64)), policyIds: Schema.Array(OpaqueId).check(Schema.isMaxLength(64)) });
 const PlanPayload = Schema.Struct({ kind: Schema.Literal("plan"), provider: Schema.Literals(["omarchy", "homebrew"]), providerRole: Schema.Literals(["primary", "fallback"]), policyId: OpaqueId, planId: OpaqueId, bindingDigest: OpaqueId, confirmationRequired: Schema.Literal(true), acquisitionDoesNotVerifyConfiguration: Schema.Literal(true), acquisitionDoesNotVerifyDotfileStow: Schema.Literal(true) });
 const EvidencePayload = Schema.Struct({ kind: Schema.Literal("evidence"), evidenceId: OpaqueId, strength: SafeText, summaryCode: SafeText });

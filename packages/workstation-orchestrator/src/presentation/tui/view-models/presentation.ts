@@ -31,7 +31,7 @@ const titles: Record<TuiViewId, readonly [string, string]> = {
 };
 
 const assessmentItems = (result: PublicResultV2): readonly string[] => result.payload.kind === "assessment"
-  ? [result.payload.platform, result.payload.policyId]
+  ? [result.payload.platform, result.payload.architecture, result.payload.policyId, result.payload.omarchy.availability === "observed" ? `Omarchy ${result.payload.omarchy.version} (${result.payload.omarchy.generation})` : `Omarchy unavailable: ${result.payload.omarchy.reason}`]
   : [];
 const profileItems = (result: PublicResultV2): readonly string[] => result.payload.kind === "assessment" || result.payload.kind === "profiles"
   ? result.payload.profiles
@@ -51,14 +51,15 @@ const backupItems = (result: PublicResultV2): readonly string[] => result.payloa
     : [];
 
 const itemsFor = (id: TuiViewId, result: PublicResultV2): readonly string[] => {
+  const evidenceItems = result.evidence.map(({ evidenceId, strength, summaryCode }) => `${evidenceId}: ${strength}/${summaryCode}`);
   const byId: Record<TuiViewId, readonly string[]> = {
-    overview: [result.operation, result.status],
+    overview: [result.operation, result.status, ...assessmentItems(result), ...profileItems(result), ...(result.payload.kind === "assessment" ? evidenceItems : [])],
     "platform-policy": assessmentItems(result),
     profiles: profileItems(result),
     programs: programItems(result),
     plans: planItems(result),
     blockers: result.blockers.map(({ code }) => code),
-    evidence: result.evidence.map(({ evidenceId, strength, summaryCode }) => `${evidenceId}: ${strength}/${summaryCode}`),
+    evidence: evidenceItems,
     backups: backupItems(result),
   };
   return byId[id];
