@@ -12,7 +12,9 @@ import {
   EvidenceStatusPort,
   PackageMappingPort,
   PlatformFactsPort,
+  ProfileInventoryPort,
   ProviderDiscoveryPort,
+  SourceEvidencePort,
 } from "../../../src/application/ports/workstation.js";
 import { AssessWorkstation } from "../../../src/application/services/workstation.js";
 import { makeReadOnlyLayer, readOnlyLayer, ReadOnlyRequestService } from "../../../src/composition/read-only.js";
@@ -177,7 +179,7 @@ describe("Effect Atom service projection", () => {
   test("stores the same V2 semantic projection received by JSON without adapter reconstruction", async () => {
     const result: PublicResultV2 = {
       version: "PublicResultV2", operation: "assess_workstation", status: "completed", correlationId: "request:atom-test",
-      payload: { kind: "assessment", platform: "macos", policyId: "policy:macos", profiles: ["profile:shared"], programs: [{ programId: "program:neovim", packageState: "present", configurationState: "ready", dotfileStowState: "stow-ready" }], backups: [] },
+      payload: { kind: "assessment", platform: "macos", architecture: "aarch64", omarchy: { availability: "unavailable", reason: "not-applicable" }, policyId: "policy:macos", profiles: ["profile:shared"], programs: [{ programId: "program:neovim", packageState: "present", configurationState: "ready", dotfileStowState: "stow-ready" }], backups: [] },
       blockers: [], evidence: [{ evidenceId: "evidence:platform", strength: "structural", summaryCode: "platform-observed" }], nextActions: ["inspect-results"],
     };
     const session = createPresentationSession({ invoke: async () => projectPublicResultV2(result) });
@@ -228,6 +230,8 @@ describe("Effect Atom service projection", () => {
         forProgram: () => Effect.succeed({ programId, packageState: "present" as const, configurationState: "ready" as const, dotfileStowState: "stow-ready" as const, evidence: [] }),
       }),
       Layer.succeed(BackupStatusPort, { visibility: Effect.succeed([]) }),
+      Layer.succeed(ProfileInventoryPort, { inventory: Effect.succeed({ sourceContract: "workstation-source-v1" as const, sourceVersion: "1" as const, sourceFingerprint: "fingerprint:fixture", evidenceStrength: "structural" as const, profiles: [{ id: "profile:shared", bootstrapSelector: "shared", dotfileSelectors: ["shared"], selected: true }], expectations: [] }) }),
+      Layer.succeed(SourceEvidencePort, { observations: Effect.succeed([]) }),
       Layer.succeed(ProviderDiscoveryPort, {
         discover: (provider) => Effect.succeed({ provider, availability: "missing" as const, observedVersion: "unknown" as const, capabilities: [], evidence: [] }),
       }),
@@ -271,6 +275,7 @@ describe("Effect Atom service projection", () => {
     expect(WorkstationRegistryProvider).toBeTypeOf("function");
     expect(sources).not.toMatch(/(?:infrastructure|providers|bash-contracts|bun:sqlite|node:fs|node:child_process|process\.env)/);
     expect(sources).not.toMatch(/(?:omarchy|homebrew|stow|restore|subprocess)/i);
-    expect(composition).not.toMatch(/(?:Executor|execute_confirmed_plan|bun:sqlite|node:fs|node:child_process|process\.env|stow|restore)/i);
+    expect(composition).not.toMatch(/(?:Executor|execute_confirmed_plan|bun:sqlite|node:fs|node:child_process|process\.env|stow|restore|infrastructure\/providers|composition\/mutation)/i);
+    expect(composition.match(/infrastructure\/subprocess\/argv\.js/g)).toHaveLength(1);
   });
 });

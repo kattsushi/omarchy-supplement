@@ -5,7 +5,7 @@ import * as Schema from "effect/Schema";
 import { createPlanBinding, PlanDigestService } from "../../src/domain/plans.js";
 import { manualRestoreGuidance } from "../../src/domain/recovery.js";
 import { captureBoundedLinuxEvidence } from "../../src/infrastructure/platform/native-evidence.js";
-import { PackageMappingPort, PlatformFactsPort, ProviderDiscoveryPort } from "../../src/application/ports/workstation.js";
+import { PackageMappingPort, PlatformFactsPort, ProfileInventoryPort, ProviderDiscoveryPort, SourceEvidencePort } from "../../src/application/ports/workstation.js";
 import { PlanPackageAcquisition } from "../../src/application/services/workstation.js";
 import { ProgramId } from "../../src/domain/states.js";
 import { makeReadOnlyOperationHandlers } from "../../src/application/contracts/operation-registry.js";
@@ -73,6 +73,7 @@ describe("Task 8 read-only guidance", () => {
       { assess: () => Effect.die("not-used") },
       { plan: () => Effect.die("not-used") },
       { backups: () => Effect.succeed([{ backupId: "backup:weekly", targetId: "target:dotfiles", state: "verification-failed" as const, identityEvidenceIds: ["evidence:identity"], integrityEvidenceIds: [], nextAction: { kind: "reassess" as const, reasonCode: "backup-verification-required" } }]) },
+      { platform: () => Effect.die("not-used"), profiles: () => Effect.die("not-used"), evidence: () => Effect.die("not-used") },
     );
     const request = { version: "AgentRequestV1" as const, requestId: "request:backup", operation: "show_backup" as const, input: { backupId: "backup:weekly" }, timeoutSeconds: 30 };
     const backup = await Effect.runPromise(handlers.show_backup(request));
@@ -87,6 +88,8 @@ describe("Task 8 read-only guidance", () => {
     const ports = Layer.mergeAll(
       Layer.succeed(PlatformFactsPort, { facts: Effect.die("not-used") }),
       Layer.succeed(EvidenceStatusPort, { forProgram: () => Effect.die("not-used") }),
+      Layer.succeed(ProfileInventoryPort, { inventory: Effect.die("not-used") }),
+      Layer.succeed(SourceEvidencePort, { observations: Effect.die("not-used") }),
       Layer.succeed(ProviderDiscoveryPort, { discover: () => Effect.die("not-used") }),
       Layer.succeed(PackageMappingPort, { map: () => Effect.die("not-used") }),
       Layer.succeed(BackupStatusPort, { visibility: Effect.succeed([{ backupId: "backup:weekly", targetId: "target:dotfiles", state: "verified" as const, identityEvidenceIds: ["evidence:identity"], integrityEvidenceIds: ["evidence:integrity"], nextAction: { kind: "follow-manual-guidance" as const, reasonCode: "manual-restore-only" } }]) }),
