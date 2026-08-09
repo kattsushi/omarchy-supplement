@@ -4,6 +4,7 @@ import * as Layer from "effect/Layer";
 import type { AgentOperation, AgentRequest } from "./agent-request.js";
 import type { PublicResult, PublicResultV1, PublicResultV2 } from "./public-result.js";
 import { manualRestoreGuidance, type BackupVisibility } from "../../domain/recovery.js";
+import type { PlatformFacts, ProfileInventory, SourceEvidenceObservation } from "../ports/workstation.js";
 
 export const operationNames = ["assess_workstation", "list_profiles", "plan_package_install", "show_evidence", "show_backup", "restore_guidance"] as const;
 export const unsupportedResult = (operation: AgentOperation, correlationId: string): PublicResultV1 => ({
@@ -35,6 +36,16 @@ export const unavailableOperationHandlers: OperationHandlers = {
 type AssessmentService = { readonly assess: (programIds: readonly any[]) => Effect.Effect<any, any, never> };
 type PlanningService = { readonly plan: (request: any) => Effect.Effect<any, any, never> };
 type BackupService = { readonly backups: () => Effect.Effect<readonly BackupVisibility[], unknown> };
+type ObservationService = {
+  readonly platform: () => Effect.Effect<PlatformFacts, unknown>;
+  readonly profiles: () => Effect.Effect<ProfileInventory, unknown>;
+  readonly evidence: () => Effect.Effect<readonly SourceEvidenceObservation[], unknown>;
+};
+const assessmentStatus = (blockers: readonly { readonly policyDecision: string }[]): PublicResultV2["status"] => blockers.some(({ policyDecision }) => policyDecision === "ambiguous")
+  ? "ambiguous"
+  : blockers.some(({ policyDecision }) => policyDecision === "stale")
+    ? "stale"
+    : blockers.length > 0 ? "refused" : "completed";
 
 const unavailableByOperation = {
   list_profiles: unavailable,
@@ -66,13 +77,29 @@ const backupHandler = (request: AgentRequest, backups: BackupService, operation:
       : Effect.succeed(operation === "show_backup" ? backupResult(request, backup) : guidanceResult(request, backup));
   });
 
-export const makeReadOnlyOperationHandlers = (assessment: AssessmentService, planning: PlanningService, backups: BackupService = { backups: () => Effect.succeed([]) }): OperationHandlers => ({
+export const makeReadOnlyOperationHandlers = (assessment: AssessmentService, planning: PlanningService, backups: BackupService, observations: ObservationService): OperationHandlers => ({
   ...unavailableByOperation,
-  assess_workstation: (request) => request.operation !== "assess_workstation" ? unavailable(request) : Effect.map(assessment.assess(request.input.programIds), (value): PublicResultV2 => ({
-    version: "PublicResultV2", operation: "assess_workstation", status: value.blockers.length === 0 ? "completed" : "refused", correlationId: request.requestId,
-    payload: { kind: "assessment", platform: value.compatibility.platform ?? "unknown", policyId: `policy:${value.compatibility.policyId ?? "unknown"}`, profiles: [], programs: value.programs.map((program: any) => ({ programId: program.programId, packageState: program.packageState, configurationState: program.configurationState, dotfileStowState: program.dotfileStowState })), backups: value.backups.map((backup: any) => backup.backupId ?? "backup:unavailable") },
-    blockers: value.blockers.map((blocker: any) => ({ code: blocker.policyDecision === "ambiguous" ? "operation-ambiguous" : blocker.policyDecision === "stale" ? "operation-stale" : "operation-refused" })), evidence: value.evidence.map((record: any) => ({ evidenceId: record.evidenceId, strength: record.strength, summaryCode: record.summaryCode })), nextActions: value.nextActions.map((action: any) => action.reasonCode),
+  assess_workstation: (request) => request.operation !== "assess_workstation" ? unavailable(request) : Effect.map(Effect.all([
+    assessment.assess(request.input.programIds), observations.platform(), observations.profiles(),
+  ]), ([value, facts, inventory]): PublicResultV2 => ({
+      version: "PublicResultV2", operation: "assess_workstation", status: assessmentStatus(value.blockers), correlationId: request.requestId,
+      payload: { kind: "assessment", platform: facts.platform, architecture: facts.architecture ?? "unknown", omarchy: facts.omarchyAvailability === "observed" && facts.omarchyVersion !== undefined ? { availability: "observed", version: facts.omarchyVersion, generation: facts.generation } : { availability: "unavailable", reason: facts.omarchyUnavailableReason ?? "source-unavailable" }, policyId: `policy:${value.compatibility.policyId ?? "unknown"}`, profiles: inventory.profiles.map(({ id }) => id), programs: value.programs.map((program: any) => ({ programId: program.programId, packageState: program.packageState, configurationState: program.configurationState, dotfileStowState: program.dotfileStowState })), backups: value.backups.map((backup: any) => backup.backupId ?? "backup:unavailable") },
+      blockers: value.blockers.map((blocker: any) => ({ code: blocker.policyDecision === "ambiguous" ? "operation-ambiguous" : blocker.policyDecision === "stale" ? "operation-stale" : "operation-refused" })), evidence: value.evidence.map((record: any) => ({ evidenceId: record.evidenceId, strength: record.strength, summaryCode: record.summaryCode })), nextActions: value.nextActions.map((action: any) => action.reasonCode),
+    })).pipe(Effect.catchCause(() => unavailable(request, "source-unavailable"))),
+  list_profiles: (request) => request.operation !== "list_profiles" ? unavailable(request) : Effect.map(observations.profiles(), (inventory): PublicResultV2 => ({
+    version: "PublicResultV2", operation: "list_profiles", status: "completed", correlationId: request.requestId,
+    payload: { kind: "profiles", profiles: inventory.profiles.map(({ id }) => id), policyIds: [] }, blockers: [], evidence: [], nextActions: [],
   })).pipe(Effect.catchCause(() => unavailable(request, "source-unavailable"))),
+  show_evidence: (request) => request.operation !== "show_evidence" ? unavailable(request) : Effect.flatMap(observations.evidence(), (values) => {
+    const observation = values.find(({ kind, id }) => kind === "program" && id === request.input.programId);
+    const records = observation?.evidence ?? [];
+    const record = records[0];
+    return record === undefined ? unavailable(request, "source-unavailable") : Effect.succeed({
+      version: "PublicResultV2", operation: "show_evidence", status: "completed", correlationId: request.requestId,
+      payload: { kind: "evidence", evidenceId: record.evidenceId, strength: record.strength, summaryCode: record.summaryCode }, blockers: [],
+      evidence: records.map(({ evidenceId, strength, summaryCode }) => ({ evidenceId, strength, summaryCode })), nextActions: [],
+    } satisfies PublicResultV2);
+  }).pipe(Effect.catchCause(() => unavailable(request, "source-unavailable"))),
   plan_package_install: (request) => request.operation !== "plan_package_install" ? unavailable(request) : Effect.map(planning.plan({
     programId: request.input.programId, fallbackOptIn: request.input.fallbackOptIn,
     binding: { operation: "package-acquisition", logicalRequestIds: [request.input.programId], platformObservationDigest: "observation:pending", profilePolicyDigest: "policy:pending", provider: "omarchy", providerRole: "primary", providerPolicy: { id: "policy:pending", version: "v1" }, capabilityId: "capability:pending", mappingIds: ["mapping:pending"], packageStateDigests: ["state:pending"], verificationPolicyId: "verification:pending", riskCodes: [], fallbackOptIn: request.input.fallbackOptIn },
