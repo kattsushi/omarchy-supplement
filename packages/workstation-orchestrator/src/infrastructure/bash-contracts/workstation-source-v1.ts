@@ -5,11 +5,22 @@ type Availability = "present" | "missing" | "unavailable";
 const safe = /^[a-z0-9][a-z0-9._:/-]*$/;
 const safeProbe = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/;
 const sha = /^sha256:[a-f0-9]{64}$/;
-const semver = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
+const semver = /^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$|^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:alpha|beta|rc)[1-9][0-9]*$/;
 const privateData = /\r|secret|token|password|private[_-]?key|\/home\/|@/i;
 const invalid = (text: string, code = "source-record") => Result.fail(new InvalidContract({ code, evidenceDigest: evidenceFingerprint(text) }));
 const refusalCodes = new Set(["PROFILE_UNKNOWN", "SOURCE_BOUNDS", "SOURCE_HASH_UNAVAILABLE", "SOURCE_MANIFEST_INCOMPLETE", "SOURCE_MANIFEST_INVALID", "SOURCE_OBSERVATION_FAILED", "SOURCE_TIMEOUT"]);
-const unavailableReasons = new Set(["malformed-or-ambiguous", "missing", "output-limit", "probe-failed", "timeout", "unsupported-major"]);
+const unavailableReasonBySource = {
+  "unknown-version": "unknown-version",
+  "future-version": "future-version",
+  "malformed-version": "malformed-version",
+  "ambiguous-version": "ambiguous-version",
+  missing: "unknown-version",
+  timeout: "unknown-version",
+  "probe-failed": "unknown-version",
+  "output-limit": "malformed-version",
+  "unsupported-major": "future-version",
+  "malformed-or-ambiguous": "ambiguous-version",
+} as const;
 const ordered = (values: readonly string[]) => values.every((value, index) => index === 0 || (values[index - 1] ?? "") < value);
 const unique = (values: readonly string[]) => new Set(values).size === values.length;
 const utf8Length = (value: string) => new TextEncoder().encode(value).byteLength;
@@ -50,9 +61,17 @@ export const parseWorkstationSource = (text: string): Result.Result<WorkstationS
   const expectations = expectationRecords.map((fields) => fields.length === 9 && fields.slice(1, 8).every((field) => safe.test(field ?? "")) && safeProbe.test(fields[8] ?? "") && /^profile:/.test(fields[1] ?? "") && ["any", "darwin", "linux"].includes(fields[2] ?? "") && ["program", "dependency"].includes(fields[6] ?? "") ? { profileId: fields[1]!, platform: fields[2] as "any" | "darwin" | "linux", selector: fields[3]!, source: fields[4]!, concern: fields[5]!, kind: fields[6] as "program" | "dependency", id: fields[7]!, probe: fields[8]! } : undefined);
   const evidence = evidenceRecords.map((fields) => fields.length === 7 && ["program", "dependency"].includes(fields[0] ?? "") && safe.test(fields[1] ?? "") && ["present", "missing", "unavailable"].includes(fields[2] ?? "") && fields.slice(3).every((field) => field === "unavailable") ? { kind: fields[0] as "program" | "dependency", id: fields[1]!, availability: fields[2] as Availability, version: "unavailable" as const, configuration: "unavailable" as const, dotfileStow: "unavailable" as const, acquisition: "unavailable" as const } : undefined);
   const version = omarchy?.[2] ?? "";
+  const revision = omarchy?.length === 5 ? omarchy[3] ?? "" : undefined;
   const generation = version.startsWith("3.") ? "omarchy-3" as const : version.startsWith("4.") ? "omarchy-4" as const : undefined;
-  const contradictoryOmarchy = omarchy?.length === 4 && omarchy[0] === "omarchy" && omarchy[1] === "observed" && semver.test(version) && generation !== undefined && generation !== omarchy[3];
-  const omarchyValue = omarchy?.length === 4 && omarchy[0] === "omarchy" && omarchy[1] === "observed" && semver.test(version) && generation === omarchy[3] ? { availability: "observed" as const, version, generation } : contradictoryOmarchy ? { availability: "unavailable" as const, reason: "malformed-or-ambiguous" } : omarchy?.length === 4 && omarchy[0] === "omarchy" && omarchy[1] === "unavailable" && unavailableReasons.has(version) && omarchy[3] === "-" ? { availability: "unavailable" as const, reason: version } : undefined;
+  const observedGeneration = omarchy?.length === 5 ? omarchy[4] : omarchy?.[3];
+  const contradictoryOmarchy = (omarchy?.length === 4 || omarchy?.length === 5) && omarchy[0] === "omarchy" && omarchy[1] === "observed" && semver.test(version) && generation !== undefined && generation !== observedGeneration;
+  const omarchyValue = (omarchy?.length === 4 || omarchy?.length === 5) && omarchy[0] === "omarchy" && omarchy[1] === "observed" && semver.test(version) && generation === observedGeneration && (revision === undefined || /^[1-9][0-9]*$/.test(revision))
+    ? { availability: "observed" as const, version, ...(revision === undefined ? {} : { revision }), generation }
+    : contradictoryOmarchy
+      ? { availability: "unavailable" as const, reason: "ambiguous-version" as const }
+      : omarchy?.length === 4 && omarchy[0] === "omarchy" && omarchy[1] === "unavailable" && omarchy[3] === "-" && omarchy[2] in unavailableReasonBySource
+        ? { availability: "unavailable" as const, reason: unavailableReasonBySource[omarchy[2] as keyof typeof unavailableReasonBySource] }
+        : undefined;
   const profileIds = profiles.map((value) => value?.id ?? "");
   const expectationIds = expectationRecords.map((fields) => fields.slice(1).join("\t"));
   const evidenceIds = evidence.map((value) => value?.id ?? "");

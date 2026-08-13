@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Result from "effect/Result";
@@ -21,6 +22,8 @@ import {
 import { makeReadOnlyLayer, makeSourceReadOnlyLayer, ReadOnlyRequestService } from "../../src/composition/read-only.js";
 import { makeReadOnlyOperationHandlers } from "../../src/application/contracts/operation-registry.js";
 import { makeReadOnlyObservationAdapters } from "../../src/infrastructure/read-only-observations/adapters.js";
+import { bashBridgeLayer } from "../../src/infrastructure/subprocess/argv.js";
+import { BashProcess } from "../../src/infrastructure/subprocess/process.js";
 import { ProgramId } from "../../src/domain/states.js";
 import { createPresentationSession } from "../../src/presentation/atoms/request-session.js";
 import { encodePublicResult } from "../../src/presentation/cli/public-result-encoder.js";
@@ -29,7 +32,7 @@ import { createTuiPresentation } from "../../src/presentation/tui/view-models/pr
 const sourceFingerprint = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const neovim = Schema.decodeUnknownSync(ProgramId)("program:neovim");
 const missingProgram = Schema.decodeUnknownSync(ProgramId)("program:missing");
-const source = (omarchy: WorkstationSource["omarchy"] = { availability: "unavailable", reason: "probe-failed" }): WorkstationSource => ({
+const source = (omarchy: WorkstationSource["omarchy"] = { availability: "unavailable", reason: "unknown-version" }): WorkstationSource => ({
   sourceFingerprint,
   platform: { name: "linux", architecture: "x86_64" },
   omarchy,
@@ -78,15 +81,10 @@ describe("production read-only composition semantics", () => {
     const result = await dispatch(request("assess_workstation", { programIds: [neovim] }));
     expect(result.status).toBe("refused");
     expect(result.payload).toMatchObject({
-        kind: "assessment",
-        platform: "linux",
-        architecture: "x86_64",
-        policyId: "policy:unknown",
-        profiles: ["profile:base", "profile:omarchy"],
-        omarchy: { availability: "unavailable", reason: "probe-failed" },
-        programs: [{ programId: "program:neovim", packageState: "present", configurationState: "unverifiable", dotfileStowState: "unverifiable" }],
+        kind: "compatibility-refusal",
+        reason: "unknown-version",
     });
-    expect(result.evidence.map(({ summaryCode }) => summaryCode)).toEqual(["linux", "probe-failed", "present"]);
+    expect(result.evidence).toEqual([]);
   });
 
   test("binds profile inventory and source evidence to populated operation-specific handlers", async () => {
@@ -119,12 +117,49 @@ describe("production read-only composition semantics", () => {
     expect(json).toEqual(result);
     expect(atom).toBe(result);
     expect(tui.result).toBe(result);
-    expect(tui.views.find(({ id }) => id === "platform-policy")?.items).toEqual(expect.arrayContaining(["linux", "x86_64", "Omarchy unavailable: probe-failed"]));
-    expect(tui.views.find(({ id }) => id === "profiles")?.items).toEqual(["profile:base", "profile:omarchy"]);
+    expect(tui.views.find(({ id }) => id === "platform-policy")?.items).toEqual(["unknown-version"]);
+    expect(tui.views.find(({ id }) => id === "profiles")?.items).toEqual([]);
+  });
+
+  test("carries actual Bash producer output through the production bridge, composition, dispatcher, JSON, and TUI", async () => {
+    for (const scenario of [
+      {
+        observation: "release candidate\nnot a version",
+        expected: { status: "refused", payload: { kind: "compatibility-refusal", reason: "malformed-version" }, blocker: "operation-refused", platformItems: ["malformed-version"] },
+      },
+      {
+        observation: "4.0.0-1",
+        expected: { status: "completed", payload: { kind: "assessment", omarchy: { availability: "observed", version: "4.0.0", generation: "omarchy-4" } }, blocker: undefined, platformItems: ["linux", "x86_64", "policy:omarchy-4:4.0.0:1", "Omarchy 4.0.0 (omarchy-4)"] },
+      },
+    ] as const) {
+      const stdout = execFileSync(
+        "../../bin/workstation-bootstrap",
+        ["observe", "--profile", "profile:base"],
+        { cwd: process.cwd(), env: { ...process.env, BOOTSTRAP_TEST_OMARCHY_OBSERVATION: scenario.observation } },
+      ).toString();
+      const bridge = Layer.provide(bashBridgeLayer, Layer.succeed(BashProcess, {
+        run: (argv) => Effect.succeed({
+          exitCode: argv.join(" ") === "workstation-bootstrap observe --profile profile:base" ? 0 : 1,
+          stdout,
+        }),
+      }));
+      const result = await dispatch(request("assess_workstation", { programIds: [] }), makeSourceReadOnlyLayer(bridge));
+      const json = JSON.parse(new TextDecoder().decode(encodePublicResult(result))) as PublicResultV2;
+      const tui = createTuiPresentation(result, 120);
+
+      expect(result).toMatchObject({ operation: "assess_workstation", status: scenario.expected.status, payload: scenario.expected.payload });
+      if (scenario.expected.blocker === undefined) expect(result.blockers).toEqual([]);
+      else expect(result.blockers).toEqual([{ code: scenario.expected.blocker }]);
+      expect(json.operation).toBe(result.operation);
+      expect(json.status).toBe(scenario.expected.status);
+      expect(json.payload).toMatchObject(scenario.expected.payload);
+      expect(tui.result).toBe(result);
+      expect(tui.views.find(({ id }) => id === "platform-policy")?.items).toEqual(scenario.expected.platformItems);
+    }
   });
 
   test("triangulates observed Omarchy without promoting executable presence to readiness", async () => {
-    const result = await dispatch(request("assess_workstation", { programIds: [neovim] }), layerFor(source({ availability: "observed", version: "4.2.1", generation: "omarchy-4" })));
+    const result = await dispatch(request("assess_workstation", { programIds: [neovim] }), layerFor(source({ availability: "observed", version: "4.2.1", revision: "1", generation: "omarchy-4" })));
 
     expect(result).toMatchObject({
       status: "completed",
@@ -132,7 +167,7 @@ describe("production read-only composition semantics", () => {
         kind: "assessment",
         platform: "linux",
         architecture: "x86_64",
-        policyId: "policy:omarchy-4-policy-v1",
+        policyId: "policy:omarchy-4:4.2.1:1",
         omarchy: { availability: "observed", version: "4.2.1", generation: "omarchy-4" },
         programs: [{ packageState: "present", configurationState: "unverifiable", dotfileStowState: "unverifiable" }],
       },
@@ -170,7 +205,7 @@ describe("production read-only composition semantics", () => {
   test("takes one immutable source snapshot per dispatch and refreshes on the next request", async () => {
     let calls = 0;
     const first = source();
-    const second = source({ availability: "observed", version: "4.2.1", generation: "omarchy-4" });
+    const second = source({ availability: "observed", version: "4.2.1", revision: "1", generation: "omarchy-4" });
     const bridge = Layer.succeed(BashBridge, {
       source: () => Effect.succeed(++calls === 1 ? first : second),
       bootstrap: () => Effect.die("not-reachable"),
@@ -183,7 +218,7 @@ describe("production read-only composition semantics", () => {
     const observedOmarchy = await dispatch(request("assess_workstation", { programIds: [] }), layer);
 
     expect(calls).toBe(2);
-    expect(unavailableOmarchy).toMatchObject({ payload: { kind: "assessment", platform: "linux", omarchy: { availability: "unavailable" } } });
+    expect(unavailableOmarchy).toMatchObject({ payload: { kind: "compatibility-refusal", reason: "unknown-version" } });
     expect(observedOmarchy).toMatchObject({ payload: { kind: "assessment", platform: "linux", omarchy: { availability: "observed", version: "4.2.1" } } });
   });
 
@@ -223,17 +258,8 @@ describe("production read-only composition semantics", () => {
   test("preserves independent facts when one of multiple requested programs has no evidence", async () => {
     const result = await dispatch(request("assess_workstation", { programIds: [neovim, missingProgram] }));
 
-    expect(result).toMatchObject({
-      status: "refused",
-      payload: {
-        kind: "assessment", platform: "linux", architecture: "x86_64", profiles: ["profile:base", "profile:omarchy"],
-        programs: [
-          { programId: neovim, packageState: "present", configurationState: "unverifiable", dotfileStowState: "unverifiable" },
-          { programId: missingProgram, packageState: "unverifiable", configurationState: "unverifiable", dotfileStowState: "unverifiable" },
-        ],
-      },
-    });
-    expect(result.evidence.map(({ summaryCode }) => summaryCode)).toEqual(["linux", "probe-failed", "present"]);
+    expect(result).toMatchObject({ status: "refused", payload: { kind: "compatibility-refusal", reason: "unknown-version" } });
+    expect(result.evidence).toEqual([]);
     expect(result.blockers).toContainEqual({ code: "operation-refused" });
   });
 

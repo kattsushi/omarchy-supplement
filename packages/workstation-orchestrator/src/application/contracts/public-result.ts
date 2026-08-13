@@ -7,7 +7,7 @@ export const PublicCode = Schema.Literals(["invalid-request", "operation-unsuppo
 export type PublicCode = typeof PublicCode.Type;
 const CorrelationId = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128), Schema.isPattern(/^request:[A-Za-z0-9_-]+$/));
 export const SafeText = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256), Schema.isPattern(/^[A-Za-z0-9 .,:_-]+$/));
-const OpaqueId = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128), Schema.isPattern(/^[a-z]+(?::[A-Za-z0-9_-]+)+$/));
+const OpaqueId = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128), Schema.isPattern(/^[a-z]+(?::[A-Za-z0-9_.-]+)+$/));
 const Blockers = Schema.Array(Schema.Struct({ code: PublicCode })).check(Schema.isMaxLength(64));
 const NextActions = Schema.Array(SafeText).check(Schema.isMaxLength(64));
 
@@ -18,6 +18,7 @@ export const PublicResultV1 = Schema.Struct({
 });
 export type PublicResultV1 = typeof PublicResultV1.Type;
 
+const CompatibilityRefusalPayload = Schema.Struct({ kind: Schema.Literal("compatibility-refusal"), reason: Schema.Literals(["deprecated-generation", "unknown-version", "future-version", "malformed-version", "ambiguous-version"]) });
 const UnavailablePayload = Schema.Struct({ kind: Schema.Literal("unavailable"), operation: AgentOperation, reason: Schema.Literals(["service-not-implemented", "source-unavailable"]) });
 const ProgramState = Schema.Struct({ programId: OpaqueId, packageState: SafeText, configurationState: SafeText, dotfileStowState: SafeText });
 const OmarchyObservation = Schema.Union([
@@ -33,7 +34,7 @@ const GuidancePayload = Schema.Struct({ kind: Schema.Literal("guidance"), backup
 
 export const PublicResultV2 = Schema.Struct({
   version: Schema.Literal("PublicResultV2"), operation: AgentOperation, status: PublicStatus, correlationId: CorrelationId,
-  payload: Schema.Union([UnavailablePayload, AssessmentPayload, ProfilesPayload, PlanPayload, EvidencePayload, BackupPayload, GuidancePayload]),
+  payload: Schema.Union([UnavailablePayload, CompatibilityRefusalPayload, AssessmentPayload, ProfilesPayload, PlanPayload, EvidencePayload, BackupPayload, GuidancePayload]),
   blockers: Blockers,
   evidence: Schema.Array(Schema.Struct({ evidenceId: OpaqueId, strength: SafeText, summaryCode: SafeText })).check(Schema.isMaxLength(64)),
   nextActions: NextActions,

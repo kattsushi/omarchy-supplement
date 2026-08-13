@@ -158,7 +158,7 @@ describe("pure workstation domain contracts", () => {
       expect(Result.isFailure(notReady) && notReady.failure._tag).toBe("ProgramNotReady");
       expect(Result.isSuccess(ready)).toBe(true);
       expect(Result.isFailure(unsupported) && unsupported.failure._tag).toBe("CompatibilityRejected");
-      expect(Result.isSuccess(validateCompatibility(selectCompatibility({ platform: "linux", generation: "omarchy-4" })))).toBe(true);
+      expect(Result.isFailure(validateCompatibility(selectCompatibility({ platform: "linux", generation: "omarchy-4" })))).toBe(true);
       expect(Result.isFailure(refusedRestore) && refusedRestore.failure._tag).toBe("ManualRestoreRefused");
       expect(Result.isSuccess(eligibleRestore)).toBe(true);
     });
@@ -178,8 +178,8 @@ describe("pure workstation domain contracts", () => {
   });
 
   test("isolates generations and preserves unverified macOS evidence", () => {
-    expect(selectCompatibility({ platform: "linux", generation: "omarchy-3" }).policyId).toBe("omarchy-3-policy-v1");
-    expect(selectCompatibility({ platform: "linux", generation: "omarchy-4" }).policyId).toBe("omarchy-4-policy-v1");
+    expect(selectCompatibility({ platform: "linux", generation: "omarchy-3" })).toMatchObject({ state: "refused", reasonCode: "deprecated-generation" });
+    expect(selectCompatibility({ platform: "linux", generation: "omarchy-4" })).toMatchObject({ state: "refused", reasonCode: "unknown-version", policyId: undefined });
     expect(selectCompatibility({ platform: "macos", generation: "unknown" }).evidenceStrength).toBe("unverified");
   });
 
@@ -197,7 +197,7 @@ describe("pure workstation domain contracts", () => {
       expect(assessment.configurationState).toBe("unverifiable");
       expect(assessment.dotfileStowState).toBe("blocked");
     }
-    expect(selectCompatibility({ platform: "linux", generation: "ambiguous" }).state).toBe("ambiguous");
+    expect(selectCompatibility({ platform: "linux", generation: "ambiguous" })).toMatchObject({ state: "refused", reasonCode: "ambiguous-version" });
     expect(selectCompatibility({ platform: "unknown", generation: "unknown" }).state).toBe("unverified");
   });
 

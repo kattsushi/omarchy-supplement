@@ -174,7 +174,7 @@ test_workstation_source_contract() {
 	cmp "$FIXTURE/source-first" "$FIXTURE/source-two" || fail "source observation was not deterministic"
 	assert_file_contains "$FIXTURE/source-one" $'schema\tworkstation-source-v1' || return 1
 	assert_file_contains "$FIXTURE/source-one" $'platform\tlinux\tx86_64' || return 1
-	assert_file_contains "$FIXTURE/source-one" $'omarchy\tobserved\t4.2.1\tomarchy-4' || return 1
+	assert_file_contains "$FIXTURE/source-one" $'omarchy\tunavailable\tunknown-version\t-' || return 1
 	assert_file_contains "$FIXTURE/source-one" $'profile\tprofile:base\tbase\tmacos,shared\tselected' || return 1
 	assert_file_contains "$FIXTURE/source-one" $'profile\tprofile:omarchy\tomarchy\tarch/omarchy\tavailable' || return 1
 	assert_file_contains "$FIXTURE/source-one" $'program\tprogram:neovim\tpresent\tunavailable\tunavailable\tunavailable\tunavailable' || return 1
@@ -199,32 +199,44 @@ test_workstation_source_contract() {
 	env BOOTSTRAP_TEST_OS=darwin BOOTSTRAP_TEST_ARCH=arm64 BOOTSTRAP_TEST_OMARCHY_OBSERVATION=missing \
 		"$ROOT/bin/workstation-bootstrap" observe --profile profile:omarchy >"$FIXTURE/source-platform"
 	assert_file_contains "$FIXTURE/source-platform" $'platform\tmacos\taarch64' || return 1
-	assert_file_contains "$FIXTURE/source-platform" $'omarchy\tunavailable\tmissing\t-' || return 1
+	assert_file_contains "$FIXTURE/source-platform" $'omarchy\tunavailable\tunknown-version\t-' || return 1
 	assert_file_contains "$FIXTURE/source-platform" $'profile\tprofile:base\tbase\tmacos,shared\tavailable' || return 1
 	assert_file_contains "$FIXTURE/source-platform" $'profile\tprofile:omarchy\tomarchy\tarch/omarchy\tselected' || return 1
 
-	for observation in 'Omarchy 3.9.0' 'Omarchy 4.0.0-rc.1+build.5' 'Omarchy 5.1.0' missing timeout 'release candidate'; do
+	for observation in 'Omarchy 3.9.0' 'Omarchy 4.0.0-rc.1+build.5' 'Omarchy 5.1.0' missing timeout 'release candidate' 'Omarchy 3.9.0 and 4.0.0'; do
 		output=$(env BOOTSTRAP_TEST_OMARCHY_OBSERVATION="$observation" "$ROOT/bin/workstation-bootstrap" observe --profile profile:base)
 		case $observation in
-			'Omarchy 3.9.0') [[ $output == *$'omarchy\tobserved\t3.9.0\tomarchy-3'* ]] || fail "Omarchy 3 classification failed";;
-			'Omarchy 4.0.0-rc.1+build.5') [[ $output == *$'omarchy\tobserved\t4.0.0-rc.1+build.5\tomarchy-4'* ]] || fail "full SemVer classification failed";;
-			'Omarchy 5.1.0') [[ $output == *$'omarchy\tunavailable\tunsupported-major\t-'* ]] || fail "future Omarchy was promoted";;
-			missing|timeout) [[ $output == *$'omarchy\tunavailable\t'"$observation"$'\t-'* ]] || fail "$observation classification failed";;
-			*) [[ $output == *$'omarchy\tunavailable\tmalformed-or-ambiguous\t-'* ]] || fail "malformed/ambiguous classification failed";;
+			'Omarchy 3.9.0') [[ $output == *$'omarchy\tobserved\t3.9.0\t1\tomarchy-3'* ]] || fail "Omarchy 3 classification failed";;
+			'Omarchy 4.0.0-rc.1+build.5') [[ $output == *$'omarchy\tunavailable\tunknown-version\t-'* ]] || fail "revisionless prerelease v4 was promoted";;
+			'Omarchy 5.1.0') [[ $output == *$'omarchy\tunavailable\tfuture-version\t-'* ]] || fail "future Omarchy was promoted";;
+			missing|timeout) [[ $output == *$'omarchy\tunavailable\tunknown-version\t-'* ]] || fail "$observation classification failed";;
+			'release candidate') [[ $output == *$'omarchy\tunavailable\tmalformed-version\t-'* ]] || fail "zero-token malformed classification failed";;
+			*) [[ $output == *$'omarchy\tunavailable\tambiguous-version\t-'* ]] || fail "conflicting-version classification failed";;
 		esac
 	done
-	for observation in 'Omarchy 01.2.3' 'Omarchy 1.02.3' 'Omarchy 1.2.03' 'Omarchy 1.2.3.4' 'Omarchy v1.2.3' 'Omarchy x1.2.3' 'Omarchy 1.2.3x' 'Omarchy 1.2.3-01' 'Omarchy 1.2.3+' 'Omarchy 3.9.0 and 4.0.0' $'Omarchy 3.9.0\nOmarchy 4.0.0' 'Omarchy ４.２.３'; do
+	output=$(env BOOTSTRAP_TEST_OMARCHY_OBSERVATION='4.0.0rc3-1' "$ROOT/bin/workstation-bootstrap" observe --profile profile:base)
+	[[ $output == *$'omarchy\tobserved\t4.0.0rc3\t1\tomarchy-4'* ]] || fail "current Omarchy RC revision was not preserved"
+	output=$(env BOOTSTRAP_TEST_OMARCHY_OBSERVATION='4.0.0-1' "$ROOT/bin/workstation-bootstrap" observe --profile profile:base)
+	[[ $output == *$'omarchy\tobserved\t4.0.0\t1\tomarchy-4'* ]] || fail "compact stable Omarchy revision was not preserved"
+	for observation in 'Omarchy 4.2.1' 'Omarchy 4.0.0-rc.3'; do
 		output=$(env BOOTSTRAP_TEST_OMARCHY_OBSERVATION="$observation" "$ROOT/bin/workstation-bootstrap" observe --profile profile:base)
-		[[ $output == *$'omarchy\tunavailable\tmalformed-or-ambiguous\t-'* ]] || fail "malformed SemVer was promoted: $observation"
+		[[ $output == *$'omarchy\tunavailable\tunknown-version\t-'* ]] || fail "revisionless v4 output was not refused: $observation"
+		[[ $output != *$'omarchy\tobserved\t'*$'\t1\tomarchy-4'* ]] || fail "revisionless v4 output fabricated revision 1: $observation"
 	done
+	for observation in 'Omarchy 01.2.3' 'Omarchy 1.02.3' 'Omarchy 1.2.03' 'Omarchy 1.2.3.4' 'Omarchy v1.2.3' 'Omarchy x1.2.3' 'Omarchy 1.2.3x' 'Omarchy 1.2.3-01' 'Omarchy 1.2.3+' 'Omarchy ４.２.３'; do
+		output=$(env BOOTSTRAP_TEST_OMARCHY_OBSERVATION="$observation" "$ROOT/bin/workstation-bootstrap" observe --profile profile:base)
+		[[ $output == *$'omarchy\tunavailable\tmalformed-version\t-'* ]] || fail "malformed SemVer was promoted: $observation"
+	done
+	output=$(env BOOTSTRAP_TEST_OMARCHY_OBSERVATION=$'Omarchy 3.9.0\nOmarchy 4.0.0' "$ROOT/bin/workstation-bootstrap" observe --profile profile:base)
+	[[ $output == *$'omarchy\tunavailable\tambiguous-version\t-'* ]] || fail "multiple-line conflicting versions were not ambiguous"
 	output=$(env BOOTSTRAP_TEST_OMARCHY_OBSERVATION="$(printf '%0513d' 0)" "$ROOT/bin/workstation-bootstrap" observe --profile profile:base)
-	[[ $output == *$'omarchy\tunavailable\toutput-limit\t-'* ]] || fail "Omarchy output limit was not typed unavailable"
+	[[ $output == *$'omarchy\tunavailable\tmalformed-version\t-'* ]] || fail "Omarchy output limit was not typed unavailable"
 	local stub="$FIXTURE/source-stub"
 	mkdir -p "$stub"
 	printf '#!/usr/bin/env bash\nprintf "SENTINEL_SECRET_VALUE /home/alice" >&2\nsleep 3\n' >"$stub/omarchy"
 	chmod +x "$stub/omarchy"
 	timeout 4s env PATH="$stub:$PATH" "$ROOT/bin/workstation-bootstrap" observe --profile profile:base >"$FIXTURE/source-timeout" 2>"$FIXTURE/source-timeout-err" || fail "bounded Omarchy probe exceeded total deadline"
-	assert_file_contains "$FIXTURE/source-timeout" $'omarchy\tunavailable\ttimeout\t-' || return 1
+	assert_file_contains "$FIXTURE/source-timeout" $'omarchy\tunavailable\tunknown-version\t-' || return 1
 	[[ ! -s $FIXTURE/source-timeout-err ]] || fail "source probe exposed stderr"
 	assert_file_not_contains "$FIXTURE/source-timeout" 'SENTINEL_SECRET_VALUE' || return 1
 

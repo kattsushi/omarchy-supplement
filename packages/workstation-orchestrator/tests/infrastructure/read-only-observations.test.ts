@@ -176,7 +176,7 @@ describe("authoritative read-only observation adapters", () => {
         architecture: "x86_64",
         generation: "unknown",
         omarchyAvailability: "unavailable",
-        omarchyUnavailableReason: "timeout",
+        omarchyUnavailableReason: "unknown-version",
         sourceFingerprint: fingerprint,
       });
     }
@@ -193,7 +193,7 @@ describe("authoritative read-only observation adapters", () => {
       source().replace("platform\tlinux\tx86_64", "platform\tmacos\tx86_64"),
     ]) {
       const facts = await Effect.runPromise(makeReadOnlyObservationAdapters(parsed(text)).platform.facts);
-      expect(facts).toMatchObject({ platform: expect.any(String), architecture: "x86_64", generation: "unknown", omarchyAvailability: "unavailable", omarchyUnavailableReason: "malformed-or-ambiguous" });
+      expect(facts).toMatchObject({ platform: expect.any(String), architecture: "x86_64", generation: "unknown", omarchyAvailability: "unavailable", omarchyUnavailableReason: "ambiguous-version" });
       expect(facts).not.toHaveProperty("omarchyVersion");
     }
   });

@@ -41,6 +41,11 @@ export class PlanningRefused extends Data.TaggedError("PlanningRefused")<{
   readonly evidenceIds: readonly string[];
 }> {}
 
+const compatibilityRefused = (decision: CompatibilityDecision): PackagePlanningResult => ({
+  blockers: [{ code: "compatibility-refused", policyDecision: "refused", evidenceIds: [], nextAction: { kind: "reassess", reasonCode: decision.reasonCode ?? "unknown-version" } }],
+  nextActions: [{ kind: "reassess", reasonCode: decision.reasonCode ?? "unknown-version" }],
+});
+
 const refused = (code: PlanningRefused["code"], evidenceIds: readonly string[]): PackagePlanningResult => {
   const blocker = providerBlocker(code, evidenceIds);
   return { blockers: [blocker], nextActions: [blocker.nextAction] };
@@ -48,6 +53,7 @@ const refused = (code: PlanningRefused["code"], evidenceIds: readonly string[]):
 
 const compatibilityBlockers = {
   supported: () => [],
+  refused: (evidenceIds: readonly string[]) => [providerBlocker("compatibility-refused", evidenceIds)],
   ambiguous: (evidenceIds: readonly string[]) => [providerBlocker("platform-ambiguous", evidenceIds)],
   unsupported: (evidenceIds: readonly string[]) => [providerBlocker("native-evidence-unverified", evidenceIds)],
   unverified: (evidenceIds: readonly string[]) => [providerBlocker("native-evidence-unverified", evidenceIds)],
@@ -78,7 +84,7 @@ export class AssessWorkstation extends Context.Service<
     return {
       assess: (programIds) => Effect.gen(function*() {
         const facts = yield* platform.facts;
-        const compatibility = selectCompatibility(facts);
+        const compatibility = selectCompatibility({ platform: facts.platform, identity: facts.omarchyIdentity ?? { availability: "refused", reason: "unknown-version", generation: facts.generation } });
         const observations = yield* Effect.forEach(programIds, (programId) => Effect.result(evidenceStatus.forProgram(programId)));
         const statuses = observations.map((result, index) => Result.isSuccess(result) ? result.success : {
           programId: programIds[index]!, packageState: "unverifiable" as const, configurationState: "unverifiable" as const, dotfileStowState: "unverifiable" as const, evidence: [],
@@ -106,13 +112,15 @@ export class PlanPackageAcquisition extends Context.Service<
     return {
       plan: (request) => Effect.gen(function*() {
           const facts = yield* platform.facts;
+          const compatibility = selectCompatibility({ platform: facts.platform, identity: facts.omarchyIdentity ?? { availability: "refused", reason: "unknown-version", generation: facts.generation } });
+          if (compatibility.state === "refused") return compatibilityRefused(compatibility);
           const primary = primaryProviders[facts.platform];
           const primaryObservation = yield* providers.discover(primary);
           const selection = yield* Match.value(primaryObservation.availability).pipe(
             Match.when("present", () => Effect.succeed({ provider: primary, providerRole: "primary" as const })),
             Match.orElse(() => Match.value({ platform: facts.platform, fallbackOptIn: request.fallbackOptIn }).pipe(
               Match.when({ platform: "linux", fallbackOptIn: true }, () => Effect.gen(function*() {
-                if (selectCompatibility(facts).state !== "supported") return refused("native-evidence-unverified", facts.evidence.map((record) => record.evidenceId));
+                if (compatibility.state !== "supported") return refused("native-evidence-unverified", facts.evidence.map((record) => record.evidenceId));
                 const fallback = yield* providers.discover("homebrew");
                 return yield* Match.value(fallback.availability).pipe(
                   Match.when("present", () => Effect.succeed({ provider: "homebrew" as const, providerRole: "fallback" as const })),

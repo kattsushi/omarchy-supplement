@@ -55,10 +55,13 @@ describe("workstation-source-v1 parser", () => {
   });
 
   test("validates exact Omarchy SemVer generation authority", () => {
-    expect(parseWorkstationSource(source.replace("observed\t4.2.1\tomarchy-4", "unavailable\ttimeout\t-"))).toMatchObject({ _tag: "Success", success: { omarchy: { availability: "unavailable", reason: "timeout" } } });
-    expect(parseWorkstationSource(source.replace("observed\t4.2.1\tomarchy-4", "unavailable\tunsupported-major\t-"))).toMatchObject({ _tag: "Success", success: { omarchy: { availability: "unavailable", reason: "unsupported-major" } } });
+    expect(parseWorkstationSource(source.replace("observed\t4.2.1\tomarchy-4", "unavailable\ttimeout\t-"))).toMatchObject({ _tag: "Success", success: { omarchy: { availability: "unavailable", reason: "unknown-version" } } });
+    expect(parseWorkstationSource(source.replace("observed\t4.2.1\tomarchy-4", "unavailable\tunsupported-major\t-"))).toMatchObject({ _tag: "Success", success: { omarchy: { availability: "unavailable", reason: "future-version" } } });
     expect(parseWorkstationSource(source.replace("4.2.1", "4.2.1-rc.1+build.5"))).toMatchObject({ _tag: "Success", success: { omarchy: { availability: "observed", version: "4.2.1-rc.1+build.5", generation: "omarchy-4" } } });
-    for (const value of [source.replace("4.2.1\tomarchy-4", "3.2.1\tomarchy-4"), source.replace("4.2.1\tomarchy-4", "4.2.1\tomarchy-3")]) expect(parseWorkstationSource(value)).toMatchObject({ _tag: "Success", success: { platform: { name: "linux", architecture: "x86_64" }, omarchy: { availability: "unavailable", reason: "malformed-or-ambiguous" } } });
+    const legacy = parseWorkstationSource(source);
+    expect(legacy).toMatchObject({ _tag: "Success", success: { omarchy: { availability: "observed", version: "4.2.1", generation: "omarchy-4" } } });
+    expect(Result.isSuccess(legacy) && legacy.success.omarchy).not.toHaveProperty("revision");
+    for (const value of [source.replace("4.2.1\tomarchy-4", "3.2.1\tomarchy-4"), source.replace("4.2.1\tomarchy-4", "4.2.1\tomarchy-3")]) expect(parseWorkstationSource(value)).toMatchObject({ _tag: "Success", success: { platform: { name: "linux", architecture: "x86_64" }, omarchy: { availability: "unavailable", reason: "ambiguous-version" } } });
     for (const value of [
       source.replace("4.2.1\tomarchy-4", "5.0.0\tunknown"),
       source.replace("unavailable", "../../private"),

@@ -28,7 +28,7 @@ export const WorkstationSource = Schema.Struct({
   sourceFingerprint: Schema.String,
   platform: Schema.Struct({ name: Schema.Literals(["linux", "macos", "unknown"]), architecture: Schema.Literals(["x86_64", "aarch64", "unknown"]) }),
   omarchy: Schema.Union([
-    Schema.Struct({ availability: Schema.Literal("observed"), version: Schema.String, generation: Schema.Literals(["omarchy-3", "omarchy-4"]) }),
+    Schema.Struct({ availability: Schema.Literal("observed"), version: Schema.String, revision: Schema.optional(Schema.String), generation: Schema.Literals(["omarchy-3", "omarchy-4"]) }),
     Schema.Struct({ availability: Schema.Literal("unavailable"), reason: Schema.String }),
   ]),
   profiles: Schema.Array(Schema.Struct({ id: Schema.String, bootstrapSelector: Schema.String, dotfileSelectors: Schema.Array(Schema.String), selected: Schema.Boolean })),

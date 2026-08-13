@@ -15,7 +15,7 @@ export type ConfigurationState = typeof ConfigurationState.Type;
 export const DotfileStowState = Schema.Literals(["source-valid", "materialization-ready", "ownership-clear", "stow-ready", "applied", "conflict", "blocked", "unverifiable"]);
 export type DotfileStowState = typeof DotfileStowState.Type;
 
-export const CompatibilityState = Schema.Literals(["supported", "unsupported", "ambiguous", "unverified"]);
+export const CompatibilityState = Schema.Literals(["supported", "unsupported", "ambiguous", "unverified", "refused"]);
 export type CompatibilityState = typeof CompatibilityState.Type;
 
 export const EvidenceStrength = Schema.Literals(["native", "structural", "provider-reported", "fixture", "simulated", "unverified"]);
@@ -47,7 +47,7 @@ export const DomainBlockerCode = Schema.Literals([
   "provider-capability-ambiguous", "package-mapping-missing", "package-mapping-unsafe",
   "package-unsupported", "fallback-not-opted-in", "confirmation-absent",
   "confirmation-declined", "plan-stale", "provider-execution-failed",
-  "acquisition-unverifiable", "platform-ambiguous", "native-evidence-unverified",
+  "acquisition-unverifiable", "platform-ambiguous", "native-evidence-unverified", "compatibility-refused",
 ]);
 export type DomainBlockerCode = typeof DomainBlockerCode.Type;
 

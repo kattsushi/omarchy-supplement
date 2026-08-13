@@ -53,8 +53,8 @@ const backupItems = (result: PublicResultV2): readonly string[] => result.payloa
 const itemsFor = (id: TuiViewId, result: PublicResultV2): readonly string[] => {
   const evidenceItems = result.evidence.map(({ evidenceId, strength, summaryCode }) => `${evidenceId}: ${strength}/${summaryCode}`);
   const byId: Record<TuiViewId, readonly string[]> = {
-    overview: [result.operation, result.status, ...assessmentItems(result), ...profileItems(result), ...(result.payload.kind === "assessment" ? evidenceItems : [])],
-    "platform-policy": assessmentItems(result),
+    overview: [result.operation, result.status, ...(result.payload.kind === "compatibility-refusal" ? [result.payload.reason] : []), ...assessmentItems(result), ...profileItems(result), ...(result.payload.kind === "assessment" ? evidenceItems : [])],
+    "platform-policy": result.payload.kind === "compatibility-refusal" ? [result.payload.reason] : assessmentItems(result),
     profiles: profileItems(result),
     programs: programItems(result),
     plans: planItems(result),

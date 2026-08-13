@@ -28,7 +28,7 @@ const ports = Layer.mergeAll(
 const planLayer = Layer.merge(PlanPackageAcquisition.layer, PlanDigestService.layer);
 const linuxPorts = Layer.mergeAll(
   ports,
-  Layer.succeed(PlatformFactsPort, { facts: Effect.succeed({ ...platform, platform: "linux" as const, generation: "omarchy-3" as const, observationDigest: "platform:linux" }) }),
+  Layer.succeed(PlatformFactsPort, { facts: Effect.succeed({ ...platform, platform: "linux" as const, generation: "omarchy-4" as const, omarchyIdentity: { availability: "eligible" as const, version: "4.0.0", revision: "1", generation: "omarchy-4" as const }, observationDigest: "platform:linux" }) }),
   Layer.succeed(ProviderDiscoveryPort, { discover: (provider) => Effect.succeed({ provider, availability: provider === "omarchy" ? "missing" : "present", observedVersion: "1", capabilities: [{ kind: "homebrew-formula", commandPolicyId: "fixture-only" }], evidence: [] }) }),
   Layer.succeed(PackageMappingPort, { map: () => Effect.succeed({ mappingId: "mapping:neovim", packageName: "neovim", safe: true, alreadyPresent: true }) }),
 );

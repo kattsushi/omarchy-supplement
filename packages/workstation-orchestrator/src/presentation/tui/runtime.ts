@@ -31,7 +31,11 @@ const frameFor = (result: PublicResultV2, app: ReturnType<typeof createWorkstati
   const presentation = app.presentation();
   const state = app.state();
   const view = presentation.views.find(({ id }) => id === state.viewId)!;
-  const source = result.payload.kind === "unavailable" ? result.payload.reason : "read-only result";
+  const source = result.payload.kind === "unavailable"
+    ? result.payload.reason
+    : result.payload.kind === "compatibility-refusal"
+      ? result.payload.reason
+      : "read-only result";
   const items = view.items.length === 0 ? ["No data available"] : view.items;
   const details = state.overlay === "details" ? `\n\nDetails\n${JSON.stringify(result.payload, null, 2)}` : "";
 

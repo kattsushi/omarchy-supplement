@@ -48,27 +48,29 @@ case "$(bootstrap_os)" in arch|linux) platform=linux;; darwin|macos) platform=ma
 case "$(bootstrap_arch)" in x86_64|amd64) architecture=x86_64;; aarch64|arm64) architecture=aarch64;; *) architecture=unknown;; esac
 
 observe_omarchy() {
-	local output rc first token version generation
+	local output rc first token version generation revision source_version
 	local -a matches=()
 	local semver='(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?'
 	if [[ -n ${BOOTSTRAP_TEST_OMARCHY_OBSERVATION+x} ]]; then
-		case $BOOTSTRAP_TEST_OMARCHY_OBSERVATION in missing|timeout) printf 'unavailable\t%s\t-' "$BOOTSTRAP_TEST_OMARCHY_OBSERVATION"; return;; oversize) printf 'unavailable\toutput-limit\t-'; return;; esac
+		case $BOOTSTRAP_TEST_OMARCHY_OBSERVATION in missing|timeout) printf 'unavailable\tunknown-version\t-'; return;; oversize) printf 'unavailable\tmalformed-version\t-'; return;; esac
 		output=$BOOTSTRAP_TEST_OMARCHY_OBSERVATION
 	elif ! command -v omarchy >/dev/null 2>&1; then
-		printf 'unavailable\tmissing\t-'; return
+		printf 'unavailable\tunknown-version\t-'; return
 	else
 		set +e; output=$(timeout 2s omarchy version 2>/dev/null); rc=$?; set -e
-		[[ $rc -ne 124 ]] || { printf 'unavailable\ttimeout\t-'; return; }
-		[[ $rc -eq 0 ]] || { printf 'unavailable\tprobe-failed\t-'; return; }
+		[[ $rc -ne 124 ]] || { printf 'unavailable\tunknown-version\t-'; return; }
+		[[ $rc -eq 0 ]] || { printf 'unavailable\tunknown-version\t-'; return; }
 	fi
-	[[ $output != *$'\n'* ]] || { printf 'unavailable\tmalformed-or-ambiguous\t-'; return; }
 	first=$output
-	[[ $(printf '%s' "$first" | wc -c) -le 512 ]] || { printf 'unavailable\toutput-limit\t-'; return; }
-	for token in ${first//[^0-9A-Za-z.+-]/ }; do [[ $token =~ ^$semver$ ]] && matches+=("$token"); done
-	((${#matches[@]} == 1)) || { printf 'unavailable\tmalformed-or-ambiguous\t-'; return; }
-	version=${matches[0]}
-	case $version in 3.*) generation=omarchy-3;; 4.*) generation=omarchy-4;; *) printf 'unavailable\tunsupported-major\t-'; return;; esac
-	printf 'observed\t%s\t%s' "$version" "$generation"
+	[[ $(printf '%s' "$first" | wc -c) -le 512 ]] || { printf 'unavailable\tmalformed-version\t-'; return; }
+	for token in ${first//[^0-9A-Za-z.+-]/ }; do [[ $token =~ ^$semver$ || $token =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(alpha|beta|rc)[1-9][0-9]*-[1-9][0-9]*$ ]] && matches+=("$token"); done
+	((${#matches[@]} > 0)) || { printf 'unavailable\tmalformed-version\t-'; return; }
+	[[ $output != *$'\n'* ]] || { printf 'unavailable\tambiguous-version\t-'; return; }
+	((${#matches[@]} == 1)) || { printf 'unavailable\tambiguous-version\t-'; return; }
+	source_version=${matches[0]}
+	if [[ $source_version =~ ^([0-9]+\.[0-9]+\.[0-9]+)-([1-9][0-9]*)$ || $source_version =~ ^(.+)(alpha|beta|rc)[1-9][0-9]*-([1-9][0-9]*)$ ]]; then version=${source_version%-*}; revision=${source_version##*-}; else version=$source_version; revision=; fi
+	case $version in 3.*) generation=omarchy-3; revision=${revision:-1};; 4.*) generation=omarchy-4; [[ -n $revision ]] || { printf 'unavailable\tunknown-version\t-'; return; };; *) printf 'unavailable\tfuture-version\t-'; return;; esac
+	printf 'observed\t%s\t%s\t%s' "$version" "$revision" "$generation"
 }
 
 probe_state() {
