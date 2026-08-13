@@ -6,9 +6,12 @@ export type ProviderPolicyPredicate =
   | "humanGovernance"
   | "technicalAuthenticity"
   | "nativeEvidence"
+  | "acquisitionVerification"
   | "disclosureComprehension"
+  | "confirmation"
   | "safeEnvironment"
-  | "preservedSafetyGates";
+  | "auditReplay"
+  | "rollbackReassessment";
 
 export type ProviderPolicyPredicates = Readonly<
   Record<ProviderPolicyPredicate, boolean>
@@ -23,9 +26,12 @@ const predicateNames = [
   "humanGovernance",
   "technicalAuthenticity",
   "nativeEvidence",
+  "acquisitionVerification",
   "disclosureComprehension",
+  "confirmation",
   "safeEnvironment",
-  "preservedSafetyGates",
+  "auditReplay",
+  "rollbackReassessment",
 ] as const satisfies readonly ProviderPolicyPredicate[];
 
 export const evaluateProviderPolicy = (
@@ -52,9 +58,12 @@ export class ProviderPolicyGate extends Context.Service<
           humanGovernance: false,
           technicalAuthenticity: false,
           nativeEvidence: false,
+          acquisitionVerification: false,
           disclosureComprehension: false,
+          confirmation: false,
           safeEnvironment: false,
-          preservedSafetyGates: false,
+          auditReplay: false,
+          rollbackReassessment: false,
         }),
       ),
   }),
