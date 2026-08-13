@@ -6,6 +6,7 @@ import * as Schema from "effect/Schema";
 import { EvidenceRecord } from "../../domain/evidence.js";
 import { ProviderObservation } from "../../domain/providers.js";
 import { BackupVisibility } from "../../domain/recovery.js";
+import { OmarchyIdentity } from "../../domain/compatibility.js";
 import { ConfigurationState, DotfileStowState, OmarchyGeneration, PackageState, Platform, ProgramId, ProviderId } from "../../domain/states.js";
 
 export const PlatformFacts = Schema.Struct({
@@ -15,6 +16,8 @@ export const PlatformFacts = Schema.Struct({
   evidence: Schema.Array(EvidenceRecord),
   architecture: Schema.optional(Schema.Literals(["x86_64", "aarch64", "unknown"])),
   omarchyVersion: Schema.optional(Schema.String),
+  omarchyRevision: Schema.optional(Schema.String),
+  omarchyIdentity: Schema.optional(OmarchyIdentity),
   sourceContract: Schema.optional(Schema.String),
   sourceVersion: Schema.optional(Schema.String),
   sourceFingerprint: Schema.optional(Schema.String),

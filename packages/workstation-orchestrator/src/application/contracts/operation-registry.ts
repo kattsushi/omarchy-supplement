@@ -5,6 +5,7 @@ import type { AgentOperation, AgentRequest } from "./agent-request.js";
 import type { PublicResult, PublicResultV1, PublicResultV2 } from "./public-result.js";
 import { manualRestoreGuidance, type BackupVisibility } from "../../domain/recovery.js";
 import type { PlatformFacts, ProfileInventory, SourceEvidenceObservation } from "../ports/workstation.js";
+import type { CompatibilityRefusalReason } from "../../domain/compatibility.js";
 
 export const operationNames = ["assess_workstation", "list_profiles", "plan_package_install", "show_evidence", "show_backup", "restore_guidance"] as const;
 export const unsupportedResult = (operation: AgentOperation, correlationId: string): PublicResultV1 => ({
@@ -14,6 +15,11 @@ export const unsupportedResult = (operation: AgentOperation, correlationId: stri
 export const refusedResult = (correlationId: string): PublicResultV1 => ({
   version: "PublicResultV1", status: "refused", correlationId,
   blockers: [{ code: "operation-refused" }], evidence: [], nextActions: [],
+});
+export const compatibilityRefusalResult = (operation: AgentOperation, correlationId: string, reason: CompatibilityRefusalReason): PublicResultV2 => ({
+  version: "PublicResultV2", operation, status: "refused", correlationId,
+  payload: { kind: "compatibility-refusal", reason },
+  blockers: [{ code: "operation-refused" }], evidence: [], nextActions: [reason],
 });
 
 type OperationHandler = (request: AgentRequest) => Effect.Effect<PublicResult, never>;
@@ -81,7 +87,9 @@ export const makeReadOnlyOperationHandlers = (assessment: AssessmentService, pla
   ...unavailableByOperation,
   assess_workstation: (request) => request.operation !== "assess_workstation" ? unavailable(request) : Effect.map(Effect.all([
     assessment.assess(request.input.programIds), observations.platform(), observations.profiles(),
-  ]), ([value, facts, inventory]): PublicResultV2 => ({
+  ]), ([value, facts, inventory]): PublicResultV2 => value.compatibility.state === "refused"
+    ? compatibilityRefusalResult(request.operation, request.requestId, value.compatibility.reasonCode as CompatibilityRefusalReason)
+    : ({
       version: "PublicResultV2", operation: "assess_workstation", status: assessmentStatus(value.blockers), correlationId: request.requestId,
       payload: { kind: "assessment", platform: facts.platform, architecture: facts.architecture ?? "unknown", omarchy: facts.omarchyAvailability === "observed" && facts.omarchyVersion !== undefined ? { availability: "observed", version: facts.omarchyVersion, generation: facts.generation } : { availability: "unavailable", reason: facts.omarchyUnavailableReason ?? "source-unavailable" }, policyId: `policy:${value.compatibility.policyId ?? "unknown"}`, profiles: inventory.profiles.map(({ id }) => id), programs: value.programs.map((program: any) => ({ programId: program.programId, packageState: program.packageState, configurationState: program.configurationState, dotfileStowState: program.dotfileStowState })), backups: value.backups.map((backup: any) => backup.backupId ?? "backup:unavailable") },
       blockers: value.blockers.map((blocker: any) => ({ code: blocker.policyDecision === "ambiguous" ? "operation-ambiguous" : blocker.policyDecision === "stale" ? "operation-stale" : "operation-refused" })), evidence: value.evidence.map((record: any) => ({ evidenceId: record.evidenceId, strength: record.strength, summaryCode: record.summaryCode })), nextActions: value.nextActions.map((action: any) => action.reasonCode),

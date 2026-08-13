@@ -23,7 +23,7 @@ const binding = (fallbackOptIn: boolean) => ({
 describe("Task 8 read-only guidance", () => {
   test("binds an explicitly opted-in, already-present and safely mapped Homebrew fallback to a new plan", async () => {
     const ports = Layer.mergeAll(
-      Layer.succeed(PlatformFactsPort, { facts: Effect.succeed({ platform: "linux" as const, generation: "omarchy-3" as const, observationDigest: "platform:linux", evidence: [] }) }),
+      Layer.succeed(PlatformFactsPort, { facts: Effect.succeed({ platform: "linux" as const, generation: "omarchy-4" as const, omarchyIdentity: { availability: "eligible" as const, version: "4.0.0", revision: "1", generation: "omarchy-4" as const }, observationDigest: "platform:linux", evidence: [] }) }),
       Layer.succeed(ProviderDiscoveryPort, { discover: (provider: "omarchy" | "homebrew") => Effect.succeed({ provider, availability: provider === "omarchy" ? "missing" as const : "present" as const, observedVersion: "1", capabilities: [{ kind: "homebrew-formula" as const, commandPolicyId: "policy:homebrew-linux" }], evidence: [] }) }),
       Layer.succeed(PackageMappingPort, { map: () => Effect.succeed({ mappingId: "mapping:neovim", packageName: "neovim", safe: true, alreadyPresent: true }) }),
     );
@@ -50,7 +50,7 @@ describe("Task 8 read-only guidance", () => {
       return yield* (yield* PlanPackageAcquisition).plan({ programId, fallbackOptIn: true, binding: binding(true) });
     }).pipe(Effect.provide(Layer.merge(Layer.provide(PlanPackageAcquisition.layer, Layer.merge(ports, PlanDigestService.layer)), PlanDigestService.layer))));
     expect(result.plan).toBeUndefined();
-    expect(result.blockers[0]?.code).toBe("native-evidence-unverified");
+    expect(result.blockers[0]?.code).toBe("compatibility-refused");
   });
 
   test("provides only manual verified-backup guidance and blocks ambiguous verification", () => {

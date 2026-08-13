@@ -52,7 +52,9 @@ describe("read-only TUI runtime", () => {
     expect(JSON.parse(stdout)).toEqual({
       title: true,
       usefulSource: true,
+      initialFrameReady: true,
       navigated: true,
+      blockerVisible: true,
       destroyCalls: [1, 1, 1, 1],
       exactDestroy: true,
       listenersRestored: true,

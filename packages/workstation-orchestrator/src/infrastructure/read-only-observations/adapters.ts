@@ -12,6 +12,7 @@ import {
   type SourceExpectation,
 } from "../../application/ports/workstation.js";
 import type { EvidenceRecord } from "../../domain/evidence.js";
+import { classifyOmarchyIdentity } from "../../domain/compatibility.js";
 
 const sourceContract = "workstation-source-v1" as const;
 const sourceVersion = "1" as const;
@@ -97,20 +98,22 @@ const platformAdapter = (result: ParsedWorkstationSourceResult): PlatformFactsPo
       sourceFingerprint: source.sourceFingerprint,
     });
     const platformContext = `${source.platform.name}/${source.platform.architecture}`;
-    const omarchy = source.omarchy.availability === "observed" && source.platform.name === "linux"
-      ? source.omarchy
-      : { availability: "unavailable" as const, reason: source.omarchy.availability === "unavailable" ? source.omarchy.reason : "malformed-or-ambiguous" };
+    const omarchy = source.omarchy.availability === "observed" && source.platform.name !== "linux"
+      ? { availability: "unavailable" as const, reason: "ambiguous-version" }
+      : source.omarchy;
+    const omarchyIdentity = classifyOmarchyIdentity(omarchy);
     return {
       platform: source.platform.name,
       architecture: source.platform.architecture,
-      generation: omarchy.availability === "observed" ? omarchy.generation : "unknown" as const,
-      ...(omarchy.availability === "observed" ? { omarchyVersion: omarchy.version } : { omarchyUnavailableReason: omarchy.reason }),
+      generation: omarchyIdentity.generation,
+      ...(omarchy.availability === "observed" ? { omarchyVersion: omarchy.version, omarchyRevision: omarchy.revision } : { omarchyUnavailableReason: omarchyIdentity.availability === "refused" ? omarchyIdentity.reason : "unknown-version" }),
+      omarchyIdentity,
       omarchyAvailability: omarchy.availability,
       observationDigest: source.sourceFingerprint,
       ...metadata(source, "native"),
       evidence: [
         evidence(source, "platform:workstation", "platform-observed", source.platform.name, platformContext),
-        evidence(source, "platform:omarchy", omarchy.availability === "observed" ? "omarchy-observed" : "omarchy-unavailable", omarchy.availability === "observed" ? omarchy.generation : omarchy.reason, platformContext),
+        evidence(source, "platform:omarchy", omarchy.availability === "observed" ? "omarchy-observed" : "omarchy-refused", omarchy.availability === "observed" ? omarchy.generation : omarchyIdentity.availability === "refused" ? omarchyIdentity.reason : "unknown-version", platformContext),
       ],
     };
   }),

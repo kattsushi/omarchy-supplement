@@ -36,6 +36,7 @@ const blockerPolicies = {
   "acquisition-unverifiable": { policyDecision: "refused", nextActionKind: "review-policy" },
   "platform-ambiguous": { policyDecision: "ambiguous", nextActionKind: "review-policy" },
   "native-evidence-unverified": { policyDecision: "refused", nextActionKind: "review-policy" },
+  "compatibility-refused": { policyDecision: "refused", nextActionKind: "reassess" },
 } satisfies Record<DomainBlockerCode, BlockerPolicy>;
 
 const nextActions: Record<BlockerPolicy["nextActionKind"], (reasonCode: DomainBlockerCode) => SafeNextAction> = {

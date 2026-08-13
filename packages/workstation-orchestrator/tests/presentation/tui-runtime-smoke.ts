@@ -1,34 +1,68 @@
 import { CliRenderEvents } from "@opentui/core";
 import { createTestRenderer } from "@opentui/core/testing";
-import { runWorkstationTui } from "../../src/presentation/tui/runtime.js";
+import type { PublicResultV2 } from "../../src/application/contracts/public-result.js";
+import { runRendererLifecycle } from "../../src/presentation/tui/runtime.js";
+
+const assessment: PublicResultV2 = {
+  version: "PublicResultV2",
+  operation: "assess_workstation",
+  status: "refused",
+  correlationId: "request:tui-smoke",
+  payload: {
+    kind: "assessment",
+    platform: "linux",
+    architecture: "x86_64",
+    omarchy: { availability: "unavailable", reason: "unknown-version" },
+    policyId: "policy:unavailable",
+    profiles: ["profile:base"],
+    programs: [],
+    backups: [],
+  },
+  blockers: [{ code: "operation-refused" }],
+  evidence: [],
+  nextActions: ["unknown-version"],
+};
 
 const exercise = async (quitKey: "q" | "escape" | "ctrl+c" | "external", navigate = false) => {
   const setup = await createTestRenderer({ width: 80, height: 20 });
+  let resolveScreenMounted: () => void;
+  const screenMounted = new Promise<void>((resolve) => { resolveScreenMounted = resolve; });
+  const add = setup.renderer.root.add.bind(setup.renderer.root);
+  setup.renderer.root.add = ((...args: Parameters<typeof setup.renderer.root.add>) => {
+    const added = add(...args);
+    resolveScreenMounted();
+    return added;
+  }) as typeof setup.renderer.root.add;
   let destroyCalls = 0;
   const destroy = setup.renderer.destroy.bind(setup.renderer);
   setup.renderer.destroy = () => { destroyCalls++; destroy(); };
   const keyBaseline = setup.renderer.keyInput.listenerCount("keypress");
   const destroyBaseline = setup.renderer.listenerCount(CliRenderEvents.DESTROY);
-  const running = runWorkstationTui(async () => setup.renderer);
-  await Bun.sleep(250);
+  const running = runRendererLifecycle(assessment, setup.renderer);
+  await Promise.race([
+    screenMounted,
+    Bun.sleep(1_000).then(() => { throw new Error("TUI screen did not mount within 1000ms"); }),
+  ]);
+  await setup.renderOnce();
   const frame = await setup.waitForFrame((value) => value.includes("WORKSTATION / READ ONLY"));
   let navigated = false;
+  let blockerVisible = false;
   if (navigate) {
     await setup.mockInput.typeText("6");
-    await Bun.sleep(10);
-    await setup.renderOnce();
-    const lines = setup.captureCharFrame().split("\n").map((line) => line.trim());
-    navigated = lines.includes("Blockers") && lines.includes("operation-refused");
+    const navigatedFrame = await setup.waitForFrame((value) => value.split("\n").some((line) => line.trim() === "Blockers"));
+    const lines = navigatedFrame.split("\n").map((line) => line.trim());
+    navigated = lines.includes("Blockers");
+    blockerVisible = lines.includes("operation-refused");
   }
   if (quitKey === "q") await setup.mockInput.typeText("q");
   else if (quitKey === "escape") setup.mockInput.pressEscape();
   else if (quitKey === "external") setup.renderer.destroy();
   else setup.mockInput.pressCtrlC();
-  await Bun.sleep(10);
   await running;
   return {
     frame,
     navigated,
+    blockerVisible,
     destroyCalls,
     exactDestroy: destroyCalls === 1,
     noListenerIncrease: setup.renderer.keyInput.listenerCount("keypress") <= keyBaseline
@@ -42,8 +76,13 @@ const escape = await exercise("escape");
 const external = await exercise("external");
 console.log(JSON.stringify({
   title: ctrlC.frame.includes("WORKSTATION / READ ONLY"),
-  usefulSource: ctrlC.frame.includes("linux") && ctrlC.frame.includes("x86_64") && ctrlC.frame.includes("Omarchy unavailable: probe-failed") && ctrlC.frame.includes("profile:base"),
+  usefulSource: ctrlC.frame.includes("linux")
+    && ctrlC.frame.includes("x86_64")
+    && ctrlC.frame.includes("unknown-version")
+    && ctrlC.frame.includes("profile:base"),
+  initialFrameReady: ctrlC.frame.includes("WORKSTATION / READ ONLY"),
   navigated: ctrlC.navigated,
+  blockerVisible: ctrlC.blockerVisible,
   destroyCalls: [ctrlC.destroyCalls, q.destroyCalls, escape.destroyCalls, external.destroyCalls],
   exactDestroy: ctrlC.exactDestroy && q.exactDestroy && escape.exactDestroy && external.exactDestroy,
   listenersRestored: ctrlC.noListenerIncrease && q.noListenerIncrease && escape.noListenerIncrease && external.noListenerIncrease,
