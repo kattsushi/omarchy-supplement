@@ -17,7 +17,7 @@ export type HomebrewPackagePlan = PackagePlan & { readonly plan: PackagePlan["pl
 export type OmarchyExecutionInput = { readonly plan: OmarchyPackagePlan; readonly command: OmarchyCommand };
 export type HomebrewExecutionInput = { readonly plan: HomebrewPackagePlan; readonly command: HomebrewCommand };
 
-export class PackageExecutionUnavailable extends Data.TaggedError("PackageExecutionUnavailable")<{ readonly reason: "mapping-evidence" | "capability-evidence" | "verification-evidence" | "provider-adapter"; }> {}
+export class PackageExecutionUnavailable extends Data.TaggedError("PackageExecutionUnavailable")<{ readonly reason: "mapping-evidence" | "capability-evidence" | "verification-evidence" | "provider-adapter" | "sandbox-boundary"; }> {}
 
 export class OmarchyExecutionPort extends Context.Service<OmarchyExecutionPort, { readonly execute: (input: OmarchyExecutionInput) => Effect.Effect<ProviderExecutionReport, PackageExecutionUnavailable> }>()("OmarchyExecutionPort", { make: Effect.never }) { static readonly layer = Layer.effect(this, this.make); }
 export class HomebrewExecutionPort extends Context.Service<HomebrewExecutionPort, { readonly execute: (input: HomebrewExecutionInput) => Effect.Effect<ProviderExecutionReport, PackageExecutionUnavailable> }>()("HomebrewExecutionPort", { make: Effect.never }) { static readonly layer = Layer.effect(this, this.make); }
