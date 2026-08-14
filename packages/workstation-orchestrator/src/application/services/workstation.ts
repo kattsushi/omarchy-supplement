@@ -29,7 +29,7 @@ export const WorkstationAssessment = Schema.Struct({
 export type WorkstationAssessment = typeof WorkstationAssessment.Type;
 
 export const PackagePlanningResult = Schema.Struct({
-  plan: Schema.optional(PackagePlan), blockers: Schema.Array(TypedBlocker), nextActions: Schema.Array(SafeNextAction),
+  plan: Schema.optional(PackagePlan), blockers: Schema.Array(TypedBlocker), nextActions: Schema.Array(SafeNextAction), evidence: Schema.optional(Schema.Array(EvidenceRecord)),
 });
 export type PackagePlanningResult = typeof PackagePlanningResult.Type;
 
@@ -46,9 +46,9 @@ const compatibilityRefused = (decision: CompatibilityDecision): PackagePlanningR
   nextActions: [{ kind: "reassess", reasonCode: decision.reasonCode ?? "unknown-version" }],
 });
 
-const refused = (code: PlanningRefused["code"], evidenceIds: readonly string[]): PackagePlanningResult => {
-  const blocker = providerBlocker(code, evidenceIds);
-  return { blockers: [blocker], nextActions: [blocker.nextAction] };
+const refused = (code: PlanningRefused["code"], evidence: readonly EvidenceRecord[]): PackagePlanningResult => {
+  const blocker = providerBlocker(code, evidence.map((record) => record.evidenceId));
+  return { blockers: [blocker], nextActions: [blocker.nextAction], evidence: [...evidence] };
 };
 
 const compatibilityBlockers = {
@@ -120,21 +120,21 @@ export class PlanPackageAcquisition extends Context.Service<
             Match.when("present", () => Effect.succeed({ provider: primary, providerRole: "primary" as const })),
             Match.orElse(() => Match.value({ platform: facts.platform, fallbackOptIn: request.fallbackOptIn }).pipe(
               Match.when({ platform: "linux", fallbackOptIn: true }, () => Effect.gen(function*() {
-                if (compatibility.state !== "supported") return refused("native-evidence-unverified", facts.evidence.map((record) => record.evidenceId));
+                if (compatibility.state !== "supported") return refused("native-evidence-unverified", facts.evidence);
                 const fallback = yield* providers.discover("homebrew");
                 return yield* Match.value(fallback.availability).pipe(
                   Match.when("present", () => Effect.succeed({ provider: "homebrew" as const, providerRole: "fallback" as const })),
-                  Match.orElse(() => Effect.succeed(refused("provider-missing", fallback.evidence.map((record) => record.evidenceId)))),
+                  Match.orElse(() => Effect.succeed(refused("provider-missing", fallback.evidence))),
                 );
               })),
-              Match.when({ platform: "linux" }, () => Effect.succeed(refused("fallback-not-opted-in", primaryObservation.evidence.map((record) => record.evidenceId)))),
-              Match.orElse(() => Effect.succeed(refused("provider-missing", primaryObservation.evidence.map((record) => record.evidenceId)))),
+              Match.when({ platform: "linux" }, () => Effect.succeed(refused("fallback-not-opted-in", primaryObservation.evidence))),
+              Match.orElse(() => Effect.succeed(refused("provider-missing", primaryObservation.evidence))),
             )),
           );
           if ("blockers" in selection) return selection;
           const mapping = yield* mappings.map(request.programId, selection.provider);
           const refusal = mappingRefusal(selection, mapping);
-          if (refusal !== undefined) return refused(refusal, []);
+          if (refusal !== undefined) return refused(refusal, facts.evidence);
           const bound = yield* createPlanBinding({ ...request.binding, provider: selection.provider, providerRole: selection.providerRole, capabilityId: selection.provider === "homebrew" ? "homebrew-formula" : "omarchy-pkg-add", mappingIds: [mapping.mappingId], platformObservationDigest: facts.observationDigest, fallbackOptIn: request.fallbackOptIn });
           return { plan: { plan: bound, blockers: [], nextActions: [], acquisitionDoesNotVerifyConfiguration: true as const, acquisitionDoesNotVerifyDotfileStow: true as const }, blockers: [], nextActions: [] };
       }),
