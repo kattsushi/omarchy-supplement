@@ -1,5 +1,6 @@
 import * as Effect from "effect/Effect";
 import * as Result from "effect/Result";
+import type * as ManagedRuntime from "effect/ManagedRuntime";
 import { createReadOnlyRuntime } from "../../composition/runtime.js";
 import { readOnlyLayer, ReadOnlyRequestService } from "../../composition/read-only.js";
 import { encodePublicResult } from "./public-result-encoder.js";
@@ -23,7 +24,14 @@ const readFrame = async (): Promise<Uint8Array> => {
   return frame;
 };
 
-export const runWorkstation = async (argv: readonly string[], read = readFrame, runTui = runWorkstationTui): Promise<number> => {
+type ReadOnlyRuntimeFactory = () => ManagedRuntime.ManagedRuntime<any, never>;
+
+export const runWorkstation = async (
+  argv: readonly string[],
+  read = readFrame,
+  runTui = runWorkstationTui,
+  createRuntime: ReadOnlyRuntimeFactory = () => createReadOnlyRuntime(readOnlyLayer),
+): Promise<number> => {
   const route = classifyRoute(argv);
   if (route.kind === "tui") {
     await runTui();
@@ -40,7 +48,7 @@ export const runWorkstation = async (argv: readonly string[], read = readFrame, 
     process.stdout.write(encodePublicResult(response));
     return exitCodeFor(response.status);
   }
-  const runtime = createReadOnlyRuntime(readOnlyLayer);
+  const runtime = createRuntime();
   try {
     const result = await runtime.runPromise(Effect.gen(function*() { return yield* (yield* ReadOnlyRequestService).dispatch(decoded.success); }));
     process.stdout.write(encodePublicResult(result));
